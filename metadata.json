@@ -1,0 +1,6 @@
+{
+  "name": "BudgetMate",
+  "description": "ML-powered personal budget management app with multilingual voice entry, intelligent categorization, budget forecasting, anomaly detection, and offline support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
