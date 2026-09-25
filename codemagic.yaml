@@ -2,14 +2,19 @@ workflows:
   android-workflow:
     name: Android Debug APK
     max_build_duration: 30
-    instance_type: linux_x2
+    instance_type: linux # Standard Linux free tier instance
     environment:
       java: 17
     scripts:
+      - name: Restore Debug Keystore if needed
+        script: |
+          if [ -f "debug.keystore.base64" ] && [ ! -f "debug.keystore" ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          fi
       - name: Make gradlew executable
         script: chmod +x gradlew
       - name: Build Android APK
-        script: ./gradlew assembleDebug
+        script: ./gradlew assembleDebug --stacktrace
     artifacts:
       - app/build/outputs/apk/**/*.apk
     publishing:
