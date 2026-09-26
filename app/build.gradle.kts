@@ -30,13 +30,6 @@ android {
             keyAlias = "upload"
             keyPassword = System.getenv("KEY_PASSWORD")
         }
-
-        create("debugConfig") {
-            storeFile = file("${rootDir}/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
     }
 
     buildTypes {
@@ -48,7 +41,7 @@ android {
         }
 
         debug {
-            signingConfig = signingConfigs.getByName("debugConfig")
+            // Automatically uses Android's default debug keystore
         }
     }
 
