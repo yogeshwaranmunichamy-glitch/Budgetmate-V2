@@ -63,15 +63,18 @@ import com.example.ui.components.ReceiptScannerDialog
 import com.example.ui.components.TransactionEditDialog
 import com.example.ui.components.VoiceTransactionDialog
 import com.example.ui.theme.AnomalyWarning
+import com.example.ui.theme.BudgetExceededRed
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.theme.IncomeGreen
 import com.example.ui.viewmodel.BudgetMateViewModel
 import com.example.util.CurrencyFormatter
+import com.example.util.rememberVoiceInputState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionsScreen(viewModel: BudgetMateViewModel) {
+    val searchVoiceState = rememberVoiceInputState()
     val currentUser by viewModel.currentUser.collectAsState()
     val allTransactions by viewModel.transactions.collectAsState()
 
@@ -163,9 +166,28 @@ fun TransactionsScreen(viewModel: BudgetMateViewModel) {
                 placeholder = { Text("Search by merchant, note, amount...") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = { query = "" }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = {
+                                if (searchVoiceState.isListening) {
+                                    searchVoiceState.stopListening()
+                                } else {
+                                    searchVoiceState.startListening("English") { spokenText ->
+                                        query = spokenText
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "Voice Search",
+                                tint = if (searchVoiceState.isListening) BudgetExceededRed else EmeraldPrimary
+                            )
+                        }
+                        if (query.isNotEmpty()) {
+                            IconButton(onClick = { query = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                            }
                         }
                     }
                 },
@@ -403,6 +425,7 @@ fun TransactionsScreen(viewModel: BudgetMateViewModel) {
         currentUser?.let { user ->
             VoiceTransactionDialog(
                 userId = user.id,
+                viewModel = viewModel,
                 onDismiss = { showVoiceDialog = false },
                 onConfirmSave = { tx, origCat ->
                     viewModel.addTransaction(tx)

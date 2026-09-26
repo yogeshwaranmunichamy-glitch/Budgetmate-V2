@@ -461,6 +461,24 @@ class BudgetMateViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun addMultipleTransactions(txs: List<TransactionEntity>, onSaved: ((List<TransactionEntity>) -> Unit)? = null) {
+        val user = _currentUser.value ?: return
+        viewModelScope.launch {
+            val savedList = mutableListOf<TransactionEntity>()
+            for (tx in txs) {
+                val insertedId = repository.insertTransaction(tx.copy(userId = user.id))
+                savedList.add(tx.copy(id = insertedId, userId = user.id))
+            }
+            onSaved?.invoke(savedList)
+        }
+    }
+
+    suspend fun saveTransactionDirect(tx: TransactionEntity): TransactionEntity? {
+        val user = _currentUser.value ?: return null
+        val insertedId = repository.insertTransaction(tx.copy(userId = user.id))
+        return tx.copy(id = insertedId, userId = user.id)
+    }
+
     fun updateTransaction(tx: TransactionEntity) {
         viewModelScope.launch {
             repository.updateTransaction(tx)
@@ -480,6 +498,18 @@ class BudgetMateViewModel(application: Application) : AndroidViewModel(applicati
                 repository.recordUserCorrection(user.id, rawText, predicted, corrected)
             }
         }
+    }
+
+    fun trainCustomKeyword(keyword: String, category: String) {
+        val user = _currentUser.value ?: return
+        viewModelScope.launch {
+            repository.recordUserCorrection(user.id, keyword, "Unclassified", category)
+            com.example.ml.MultilingualNLP.trainCustomKeyword(keyword, category)
+        }
+    }
+
+    fun clearCustomLearnedMemory() {
+        com.example.ml.MultilingualNLP.clearLearnedMemory()
     }
 
     // ---------------- Budget Management ----------------

@@ -29,6 +29,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -57,10 +58,13 @@ import androidx.compose.ui.window.Dialog
 import com.example.data.local.entities.TripEntity
 import com.example.ml.ParsedTripVoiceExpense
 import com.example.ml.TripAnalyticsEngine
+import com.example.ui.theme.AnomalyWarning
 import com.example.ui.theme.BudgetExceededRed
 import com.example.ui.theme.BudgetSafeGreen
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.viewmodel.BudgetMateViewModel
+import com.example.util.VoicePulseMicButton
+import com.example.util.rememberVoiceInputState
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -73,8 +77,8 @@ fun TripVoiceEntryDialog(
         trip.companions.split(",").map { it.trim() }.filter { it.isNotBlank() }
     }
 
+    val voiceState = rememberVoiceInputState()
     var transcriptText by remember { mutableStateOf("") }
-    var isListening by remember { mutableStateOf(false) }
     var selectedLang by remember { mutableStateOf("Tamil + English") }
     var parsedResult by remember { mutableStateOf<ParsedTripVoiceExpense?>(null) }
 
@@ -88,6 +92,20 @@ fun TripVoiceEntryDialog(
     var categoryExpanded by remember { mutableStateOf(false) }
     var paidByExpanded by remember { mutableStateOf(false) }
     var paymentMethodExpanded by remember { mutableStateOf(false) }
+    var presetDropdownExpanded by remember { mutableStateOf(false) }
+
+    fun processSpokenText(text: String) {
+        transcriptText = text
+        if (text.isNotBlank()) {
+            val res = TripAnalyticsEngine.parseTripVoiceExpense(text, companions)
+            parsedResult = res
+            editTitle = res.title
+            editAmount = res.amount.toString()
+            editCategory = res.category
+            editPaidBy = res.paidBy
+            editPaymentMethod = res.paymentMethod
+        }
+    }
 
     val quickPresets = listOf(
         "Paid 1200 for hotel dinner in Goa" to "English",
@@ -165,59 +183,65 @@ fun TripVoiceEntryDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Microphone pulse button
-                Box(
-                    modifier = Modifier
-                        .size(76.dp)
-                        .clip(CircleShape)
-                        .background(if (isListening) BudgetExceededRed else EmeraldPrimary)
-                        .clickable {
-                            isListening = !isListening
-                            if (!isListening && transcriptText.isNotBlank()) {
-                                val res = TripAnalyticsEngine.parseTripVoiceExpense(transcriptText, companions)
-                                parsedResult = res
-                                editTitle = res.title
-                                editAmount = res.amount.toString()
-                                editCategory = res.category
-                                editPaidBy = res.paidBy
-                                editPaymentMethod = res.paymentMethod
+                // Microphone pulse button with real listening & permission handling
+                VoicePulseMicButton(
+                    isListening = voiceState.isListening,
+                    rmsLevel = voiceState.rmsLevel,
+                    onClick = {
+                        if (voiceState.isListening) {
+                            voiceState.stopListening()
+                        } else {
+                            voiceState.startListening(selectedLang) { resultText ->
+                                processSpokenText(resultText)
                             }
                         }
-                        .testTag("trip_voice_record_button"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Mic,
-                        contentDescription = "Record Speech",
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
+                    },
+                    size = 72.dp,
+                    testTag = "trip_voice_record_button"
+                )
 
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = if (isListening) "Listening in $selectedLang..." else "Tap Mic or pick sample below",
+                    text = if (voiceState.isListening) {
+                        if (voiceState.partialTranscript.isNotBlank()) "Hearing: \"${voiceState.partialTranscript}\""
+                        else "Listening in $selectedLang... (Speak now)"
+                    } else "Tap Mic to Speak or Pick Sample Below",
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (voiceState.isListening) EmeraldPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = if (voiceState.isListening) FontWeight.Bold else FontWeight.Normal
                 )
+
+                // Error message banner if any
+                if (!voiceState.errorMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "⚠️ ${voiceState.errorMessage}",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = { voiceState.clearError() }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Dismiss Error", modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // Transcript box
                 OutlinedTextField(
                     value = transcriptText,
-                    onValueChange = {
-                        transcriptText = it
-                        if (it.isNotBlank()) {
-                            val res = TripAnalyticsEngine.parseTripVoiceExpense(it, companions)
-                            parsedResult = res
-                            editTitle = res.title
-                            editAmount = res.amount.toString()
-                            editCategory = res.category
-                            editPaidBy = res.paidBy
-                            editPaymentMethod = res.paymentMethod
-                        }
-                    },
+                    onValueChange = { processSpokenText(it) },
                     label = { Text("Transcript / Speech Input") },
                     placeholder = { Text("e.g., Goa dinner 1500 Rahul paid") },
                     modifier = Modifier.fillMaxWidth(),
@@ -226,26 +250,55 @@ fun TripVoiceEntryDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Quick presets
-                Text(
-                    text = "Quick Sample Presets:",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.align(Alignment.Start)
-                )
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    quickPresets.forEach { (text, tag) ->
+                // Quick presets dropdown
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { presetDropdownExpanded = !presetDropdownExpanded }
+                    ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                .clickable {
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "💡 Choose sample trip voice input...",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "Presets",
+                                tint = EmeraldPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    DropdownMenu(
+                        expanded = presetDropdownExpanded,
+                        onDismissRequest = { presetDropdownExpanded = false },
+                        modifier = Modifier.fillMaxWidth(0.88f)
+                    ) {
+                        quickPresets.forEach { (text, tag) ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(text = text, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(text = "[$tag]", fontSize = 10.sp, color = EmeraldPrimary, fontWeight = FontWeight.Bold)
+                                    }
+                                },
+                                onClick = {
+                                    presetDropdownExpanded = false
                                     transcriptText = text
                                     val res = TripAnalyticsEngine.parseTripVoiceExpense(text, companions)
                                     parsedResult = res
@@ -255,21 +308,6 @@ fun TripVoiceEntryDialog(
                                     editPaidBy = res.paidBy
                                     editPaymentMethod = res.paymentMethod
                                 }
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = text,
-                                fontSize = 11.sp,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1
-                            )
-                            Text(
-                                text = "[$tag]",
-                                fontSize = 10.sp,
-                                color = EmeraldPrimary,
-                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
@@ -477,8 +515,19 @@ fun TripVoiceQueryDialog(
     viewModel: BudgetMateViewModel,
     onDismiss: () -> Unit
 ) {
+    val voiceState = rememberVoiceInputState()
     var queryText by remember { mutableStateOf("") }
     var answerText by remember { mutableStateOf<String?>(null) }
+    var selectedLang by remember { mutableStateOf("English") }
+    var questionDropdownExpanded by remember { mutableStateOf(false) }
+
+    fun runTripQuery(query: String) {
+        queryText = query
+        if (query.isNotBlank()) {
+            viewModel.processTripVoiceQuery(query)
+            answerText = viewModel.tripVoiceResponse.value
+        }
+    }
 
     val quickQuestions = listOf(
         "How much spent on food?",
@@ -526,52 +575,164 @@ fun TripVoiceQueryDialog(
                     }
                 }
 
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Language selection chips for query
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf("English", "Tamil + English", "Hindi + English").forEach { lang ->
+                        val isSel = selectedLang == lang
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isSel) EmeraldPrimary else MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { selectedLang = lang }
+                                .padding(vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = lang,
+                                color = if (isSel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
+
+                // Prominent Voice Mic button to ask question
+                VoicePulseMicButton(
+                    isListening = voiceState.isListening,
+                    rmsLevel = voiceState.rmsLevel,
+                    onClick = {
+                        if (voiceState.isListening) {
+                            voiceState.stopListening()
+                        } else {
+                            voiceState.startListening(selectedLang) { resultText ->
+                                runTripQuery(resultText)
+                            }
+                        }
+                    },
+                    size = 64.dp,
+                    testTag = "trip_voice_query_mic_button"
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = if (voiceState.isListening) {
+                        if (voiceState.partialTranscript.isNotBlank()) "Hearing: \"${voiceState.partialTranscript}\""
+                        else "Listening... Speak your trip question"
+                    } else "Tap Mic to Speak Question",
+                    fontSize = 12.sp,
+                    color = if (voiceState.isListening) EmeraldPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = if (voiceState.isListening) FontWeight.Bold else FontWeight.Normal
+                )
+
+                if (!voiceState.errorMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "⚠️ ${voiceState.errorMessage}",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = { voiceState.clearError() }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Dismiss", modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
 
                 OutlinedTextField(
                     value = queryText,
-                    onValueChange = {
-                        queryText = it
-                        if (it.isNotBlank()) {
-                            viewModel.processTripVoiceQuery(it)
-                            answerText = viewModel.tripVoiceResponse.value
+                    onValueChange = { runTripQuery(it) },
+                    label = { Text("Trip question") },
+                    placeholder = { Text("e.g. How much spent on food?") },
+                    trailingIcon = {
+                        IconButton(
+                            onClick = {
+                                if (voiceState.isListening) {
+                                    voiceState.stopListening()
+                                } else {
+                                    voiceState.startListening(selectedLang) { resultText ->
+                                        runTripQuery(resultText)
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "Voice Input",
+                                tint = if (voiceState.isListening) BudgetExceededRed else EmeraldPrimary
+                            )
                         }
                     },
-                    label = { Text("Ask a question about trip expenses") },
-                    placeholder = { Text("e.g. How much spent on food?") },
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                Text(
-                    text = "Suggested Questions:",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.align(Alignment.Start)
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    quickQuestions.forEach { q ->
-                        Box(
+                // Suggested questions dropdown
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { questionDropdownExpanded = !questionDropdownExpanded }
+                    ) {
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                                .clickable {
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "💡 Choose a sample trip question...",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "Questions",
+                                tint = EmeraldPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    DropdownMenu(
+                        expanded = questionDropdownExpanded,
+                        onDismissRequest = { questionDropdownExpanded = false },
+                        modifier = Modifier.fillMaxWidth(0.88f)
+                    ) {
+                        quickQuestions.forEach { q ->
+                            DropdownMenuItem(
+                                text = { Text(text = "🗣️ $q", fontSize = 12.sp) },
+                                onClick = {
+                                    questionDropdownExpanded = false
                                     queryText = q
                                     viewModel.processTripVoiceQuery(q)
                                     answerText = viewModel.tripVoiceResponse.value
                                 }
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Text(text = "🗣️ $q", fontSize = 12.sp)
+                            )
                         }
                     }
                 }

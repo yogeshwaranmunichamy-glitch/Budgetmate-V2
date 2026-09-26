@@ -32,6 +32,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -54,6 +55,7 @@ import com.example.data.local.entities.TransactionEntity
 import com.example.ui.components.CategoryDoughnutChart
 import com.example.ui.components.ReceiptScannerDialog
 import com.example.ui.components.TransactionEditDialog
+import com.example.ui.components.TripVoiceEntryDialog
 import com.example.ui.components.VoiceTransactionDialog
 import com.example.ui.theme.AnomalyWarning
 import com.example.ui.theme.EmeraldPrimary
@@ -75,6 +77,7 @@ fun DashboardScreen(viewModel: BudgetMateViewModel) {
 
     var showAddDialog by remember { mutableStateOf(false) }
     var showVoiceDialog by remember { mutableStateOf(false) }
+    var showTripVoiceDialog by remember { mutableStateOf(false) }
     var showReceiptDialog by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<TransactionEntity?>(null) }
 
@@ -127,7 +130,13 @@ fun DashboardScreen(viewModel: BudgetMateViewModel) {
                                 .size(42.dp)
                                 .clip(CircleShape)
                                 .background(EmeraldPrimary)
-                                .clickable { showVoiceDialog = true }
+                                .clickable {
+                                    if (isTripModeActive && activeTrip != null) {
+                                        showTripVoiceDialog = true
+                                    } else {
+                                        showVoiceDialog = true
+                                    }
+                                }
                                 .testTag("dashboard_voice_button"),
                             contentAlignment = Alignment.Center
                         ) {
@@ -274,12 +283,25 @@ fun DashboardScreen(viewModel: BudgetMateViewModel) {
                                 }
                             }
 
-                            Icon(
-                                imageVector = Icons.Default.FlightTakeoff,
-                                contentDescription = "Open Trip",
-                                tint = EmeraldPrimary,
-                                modifier = Modifier.size(24.dp)
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (isTripModeActive) {
+                                    IconButton(
+                                        onClick = { showTripVoiceDialog = true },
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(EmeraldPrimary)
+                                    ) {
+                                        Icon(Icons.Default.Mic, contentDescription = "Trip Voice Log", tint = Color.White, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.FlightTakeoff,
+                                    contentDescription = "Open Trip",
+                                    tint = EmeraldPrimary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -510,6 +532,7 @@ fun DashboardScreen(viewModel: BudgetMateViewModel) {
         currentUser?.let { user ->
             VoiceTransactionDialog(
                 userId = user.id,
+                viewModel = viewModel,
                 onDismiss = { showVoiceDialog = false },
                 onConfirmSave = { tx, origCat ->
                     viewModel.addTransaction(tx)
@@ -517,6 +540,14 @@ fun DashboardScreen(viewModel: BudgetMateViewModel) {
                 }
             )
         }
+    }
+
+    if (showTripVoiceDialog && activeTrip != null) {
+        TripVoiceEntryDialog(
+            trip = activeTrip!!,
+            viewModel = viewModel,
+            onDismiss = { showTripVoiceDialog = false }
+        )
     }
 
     if (showReceiptDialog) {
