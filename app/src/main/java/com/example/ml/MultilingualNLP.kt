@@ -175,6 +175,7 @@ object MultilingualNLP {
     private val paymentMethodKeywords = mapOf(
         "UPI" to listOf("gpay", "google pay", "phonepe", "paytm", "upi", "bhim", "qr code", "scanned"),
         "Cash" to listOf("cash", "panam", "nagad", "kaasu", "பணம்", "நொடி", "नकद", "कैश"),
+        "Card" to listOf("card", "credit card", "debit card", "visa", "mastercard", "rupay", "swipe", "கார்டு", "कार्ड"),
         "Credit Card" to listOf("credit card", "cc", "hdfc card", "icici card", "க்ரெடிட் கார்டு"),
         "Debit Card" to listOf("debit card", "atm card", "டெபிட் கார்டு"),
         "Bank Transfer" to listOf("bank transfer", "neft", "imps", "rtgs", "account transfer", "net banking")
@@ -542,7 +543,7 @@ object MultilingualNLP {
 
         // Split on punctuation (, ; \n) and conjunctions:
         // and, and also, plus, also, then, aur, tatha, matrum, apram, appuram, kooda, மற்றும், மேலும், கூட, और, तथा
-        val delimiterPattern = "(?i)[,;\\n]+|\\b(?:and\\s+also|and|plus|also|then|aur|tatha|matrum|apram|appuram|kooda)\\b|[\\u0BAE\\u0BB1\\u0BCD\\u0BB1\\u0BC1\\u0BAE\\u0BCD\\u0BAE\\u0BC7\\u0BB2\\u0BC1\\u0BAE\\u0BCD\\u0B95\\u0BC2\\u0B9F\\u0914\\u0930]+"
+        val delimiterPattern = "(?i)[,;\\n]+|\\b(?:and\\s+also|and|plus|also|then|aur|tatha|matrum|apram|appuram|kooda)\\b|(?:மற்றும்|மேலும்|கூட|அப்புறம்|அப்றம்|और|तथा)"
         val initialSegments = clean.split(delimiterPattern.toRegex())
             .map { it.trim() }
             .filter { it.isNotBlank() }
@@ -625,182 +626,71 @@ object MultilingualNLP {
         return result
     }
 
-    fun parseMultiInput(input: String): List<ParsedExpenseItem> {
-        val segments = splitIntoExpenseSegments(input)
-        val items = mutableListOf<ParsedExpenseItem>()
-
-        for (seg in segments) {
-            val amt = extractAmount(seg)
-            if (amt != null && amt > 0.0) {
-                val cat = classifyCategory(seg)
-                val payment = extractPaymentMethod(seg)
-                val merchant = extractMerchant(seg, cat)
-                val confidence = if (cat != CAT_OTHER) 0.95f else 0.70f
-                items.add(
-                    ParsedExpenseItem(
-                        category = cat,
-                        amount = amt,
-                        rawText = seg,
-                        paymentMethod = payment,
-                        merchant = merchant,
-                        confidenceScore = confidence
-                    )
-                )
-            }
-        }
-
-        if (items.isEmpty()) {
-            val single = parseInput(input)
-            if (single.amount > 0.0) {
-                items.add(
-                    ParsedExpenseItem(
-                        category = single.category,
-                        amount = single.amount,
-                        rawText = input,
-                        paymentMethod = single.paymentMethod,
-                        merchant = single.merchantOrSource,
-                        confidenceScore = single.confidenceScore
-                    )
-                )
-            }
-        }
-
-        return items
+    fun formatConfirmationPrompt(items: List<ParsedExpenseItem>, isUpdate: Boolean = false): String {
+        return VoiceMLEngine.formatReadback(items, isUpdate)
     }
 
-    fun formatConfirmationPrompt(items: List<ParsedExpenseItem>, isUpdate: Boolean = false): String {
-        if (items.isEmpty()) {
-            return "No expenses currently pending. You can speak new expenses or tap cancel."
+    fun parseMultiInput(input: String): List<ParsedExpenseItem> {
+        val result = VoiceMLEngine.parseMultiInput(input)
+        if (result.isNotEmpty()) return result
+
+        val single = parseInput(input)
+        if (single.amount > 0.0) {
+            return listOf(
+                ParsedExpenseItem(
+                    category = single.category,
+                    amount = single.amount,
+                    rawText = input,
+                    paymentMethod = single.paymentMethod,
+                    merchant = single.merchantOrSource,
+                    confidenceScore = single.confidenceScore
+                )
+            )
         }
-        val itemsSummary = items.joinToString(", ") { "${it.category} ₹${it.amount.toInt()}" }
-        return if (isUpdate) {
-            "Updated list: $itemsSummary. Is this correct?"
-        } else {
-            "I understood: $itemsSummary. Is this correct?"
-        }
+        return emptyList()
     }
 
     fun processVoiceResponse(
         spokenText: String,
         currentItems: List<ParsedExpenseItem>
     ): VoiceCorrectionResult {
-        val clean = spokenText.trim()
-        if (clean.isBlank()) {
-            return VoiceCorrectionResult.Ambiguous("I didn't catch that. Please speak clearly or tap mic.")
-        }
-        val lower = clean.lowercase(Locale.ROOT)
-
-        // 1. Confirmation check
-        val confirmWords = listOf(
-            "ok", "okay", "yes", "correct", "confirm", "confirmed", "that's right", "thats right",
-            "right", "sure", "save", "done", "perfect", "good", "all good", "sari", "haan",
-            "theek hai", "sahi hai", "affirmative", "proceed", "fine", "looks good", "sounds good",
-            "சரி", "ஆம்", "हाँ", "ठीक है", "सही है"
-        )
-        val correctionMarkers = listOf(
-            "no", "not", "change", "remove", "add", "delete", "instead", "should be", "actually", "except", "but"
-        )
-        val isExplicitConfirm = confirmWords.any { kw ->
-            lower == kw || lower.startsWith("$kw ") || lower.endsWith(" $kw") || lower.contains(" $kw ")
-        }
-        val hasCorrectionMarker = correctionMarkers.any { marker ->
-            lower == marker || lower.startsWith("$marker ") || lower.contains(" $marker ")
-        }
-
-        if (isExplicitConfirm && !hasCorrectionMarker) {
-            return VoiceCorrectionResult.Confirmed(currentItems)
-        }
-
-        // 2. Removal check: e.g. "remove parking", "delete parking", "cancel food", "no parking"
-        val removeKeywords = listOf("remove", "delete", "drop", "cancel", "omit", "exclude", "erase", "no")
-        val isRemove = removeKeywords.any { kw ->
-            lower.startsWith(kw) || lower.contains(" $kw ")
-        } && !lower.contains("should be") && !lower.contains("actually")
-
-        if (isRemove) {
-            val targetItem = currentItems.firstOrNull { item ->
-                val catLower = item.category.lowercase(Locale.ROOT)
-                val keywords = categoryKeywords[item.category] ?: listOf(catLower)
-                lower.contains(catLower) || keywords.any { kw -> lower.contains(kw) }
-            }
-            if (targetItem != null) {
-                val updated = currentItems.filter { it.id != targetItem.id }
-                return VoiceCorrectionResult.Removed(
-                    items = updated,
-                    feedback = "Removed ${targetItem.category}",
-                    speechPrompt = formatConfirmationPrompt(updated, isUpdate = true)
-                )
-            }
-        }
-
-        // 3. Addition check: e.g. "add ₹200 for toll", "add 200 for toll", "also add 500 for hotel"
-        val addKeywords = listOf("add", "also add", "include", "plus")
-        val isAdd = addKeywords.any { kw ->
-            lower.startsWith(kw) || lower.contains(" $kw ")
-        } && !lower.contains("should be")
-
-        if (isAdd) {
-            val cleanAdd = lower.replace("(?i)\\b(?:add|also add|include|plus)\\b".toRegex(), "").trim()
-            val newItems = parseMultiInput(cleanAdd)
-            if (newItems.isNotEmpty()) {
-                val updated = currentItems + newItems
-                val addedDesc = newItems.joinToString(", ") { "${it.category} ₹${it.amount.toInt()}" }
-                return VoiceCorrectionResult.Added(
-                    items = updated,
-                    feedback = "Added $addedDesc",
-                    speechPrompt = formatConfirmationPrompt(updated, isUpdate = true)
-                )
-            }
-        }
-
-        // 4. Amount correction or Category change:
-        // e.g. "No, petrol should be ₹600", "Food is actually ₹350", "Petrol should be 600", "Change petrol to 600", "Petrol 600"
-        val targetItemForUpdate = currentItems.firstOrNull { item ->
-            val catLower = item.category.lowercase(Locale.ROOT)
-            val keywords = categoryKeywords[item.category] ?: listOf(catLower)
-            lower.contains(catLower) || keywords.any { kw -> lower.contains(kw) }
-        }
-
-        if (targetItemForUpdate != null) {
-            val newAmt = extractAmount(clean)
-            if (newAmt != null && newAmt > 0.0) {
-                val updated = currentItems.map {
-                    if (it.id == targetItemForUpdate.id) it.copy(amount = newAmt) else it
-                }
-                return VoiceCorrectionResult.Updated(
-                    items = updated,
-                    feedback = "Updated ${targetItemForUpdate.category} to ₹${newAmt.toInt()}",
-                    speechPrompt = formatConfirmationPrompt(updated, isUpdate = true)
-                )
-            }
-
-            // Check if user is changing category: e.g. "Change petrol to diesel"
-            val newCat = classifyCategory(clean)
-            if (newCat != targetItemForUpdate.category && newCat != CAT_OTHER) {
-                val updated = currentItems.map {
-                    if (it.id == targetItemForUpdate.id) it.copy(category = newCat) else it
-                }
-                return VoiceCorrectionResult.Updated(
-                    items = updated,
-                    feedback = "Changed ${targetItemForUpdate.category} to $newCat",
-                    speechPrompt = formatConfirmationPrompt(updated, isUpdate = true)
-                )
-            }
-        }
-
-        // 5. Complete replacement with new multi-expense phrase
-        val freshItems = parseMultiInput(clean)
-        if (freshItems.isNotEmpty() && freshItems.all { it.amount > 0 }) {
-            return VoiceCorrectionResult.Replaced(
-                items = freshItems,
-                feedback = "Parsed new expenses",
-                speechPrompt = formatConfirmationPrompt(freshItems, isUpdate = true)
+        val exec = VoiceMLEngine.processVoiceCommand(spokenText, currentItems)
+        return when {
+            exec.isConfirmed -> VoiceCorrectionResult.Confirmed(exec.updatedItems)
+            exec.isClearAll -> VoiceCorrectionResult.Removed(
+                items = emptyList(),
+                feedback = exec.feedbackMessage,
+                speechPrompt = exec.speechPrompt
             )
+            exec.feedbackMessage.startsWith("Added") -> VoiceCorrectionResult.Added(
+                items = exec.updatedItems,
+                feedback = exec.feedbackMessage,
+                speechPrompt = exec.speechPrompt
+            )
+            exec.feedbackMessage.startsWith("Removed") -> VoiceCorrectionResult.Removed(
+                items = exec.updatedItems,
+                feedback = exec.feedbackMessage,
+                speechPrompt = exec.speechPrompt
+            )
+            exec.feedbackMessage.startsWith("Updated") || exec.feedbackMessage.startsWith("Changed") -> VoiceCorrectionResult.Updated(
+                items = exec.updatedItems,
+                feedback = exec.feedbackMessage,
+                speechPrompt = exec.speechPrompt
+            )
+            exec.feedbackMessage.startsWith("Which expense") -> VoiceCorrectionResult.Ambiguous(
+                prompt = exec.speechPrompt
+            )
+            else -> {
+                if (exec.updatedItems != currentItems) {
+                    VoiceCorrectionResult.Updated(
+                        items = exec.updatedItems,
+                        feedback = exec.feedbackMessage,
+                        speechPrompt = exec.speechPrompt
+                    )
+                } else {
+                    VoiceCorrectionResult.Ambiguous(exec.speechPrompt)
+                }
+            }
         }
-
-        // 6. Ambiguous / Unclear
-        return VoiceCorrectionResult.Ambiguous(
-            "I couldn't understand that. Say 'yes' to confirm, or 'petrol should be 600', or 'remove parking'."
-        )
     }
 }
