@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -63,6 +64,7 @@ import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.ReportsScreen
 import com.example.ui.screens.SavingsRecurringScreen
+import com.example.ui.screens.ShopScreen
 import com.example.ui.screens.TransactionsScreen
 import com.example.ui.screens.TripScreen
 import com.example.ui.screens.VoiceAssistantScreen
@@ -113,13 +115,13 @@ fun MainAppContent(viewModel: BudgetMateViewModel) {
 
         val primaryNavItems = listOf(
             NavItem("dashboard", "Home", Icons.Default.AccountBalanceWallet),
+            NavItem("shop", "Shop & Khata", Icons.Default.Storefront),
             NavItem("transactions", "History", Icons.Default.ReceiptLong),
             NavItem("trips", "Trips", Icons.Default.FlightTakeoff),
-            NavItem("voice", "Voice", Icons.Default.Mic),
             NavItem("more", "More", Icons.Default.MoreHoriz)
         )
 
-        val secondaryScreens = listOf("budget", "savings", "reports", "profile")
+        val secondaryScreens = listOf("voice", "budget", "savings", "reports", "profile")
 
         Scaffold(
             modifier = Modifier.fillMaxSize(),
@@ -138,6 +140,7 @@ fun MainAppContent(viewModel: BudgetMateViewModel) {
 
                         val displayTitle = if (isMoreItem && currentScreen in secondaryScreens) {
                             when (currentScreen) {
+                                "voice" -> "Voice"
                                 "budget" -> "Budget"
                                 "savings" -> "Goals"
                                 "reports" -> "Reports"
@@ -189,6 +192,7 @@ fun MainAppContent(viewModel: BudgetMateViewModel) {
             ) {
                 when (currentScreen) {
                     "dashboard" -> DashboardScreen(viewModel = viewModel)
+                    "shop" -> ShopScreen(viewModel = viewModel)
                     "transactions" -> TransactionsScreen(viewModel = viewModel)
                     "trips" -> TripScreen(viewModel = viewModel)
                     "voice" -> VoiceAssistantScreen(viewModel = viewModel)
@@ -233,6 +237,7 @@ fun MainAppContent(viewModel: BudgetMateViewModel) {
                     Spacer(modifier = Modifier.height(14.dp))
 
                     val moreItems = listOf(
+                        Triple("voice", "Multilingual Voice Assistant", Icons.Default.Mic) to "Speech-to-text khata & expense logging in 5 languages",
                         Triple("budget", "Budget & Limits", Icons.Default.PieChart) to "Set category spending limits & track alerts",
                         Triple("savings", "Goals & Recurring", Icons.Default.Savings) to "Target emergency funds & recurring bills",
                         Triple("reports", "Reports & Analytics", Icons.Default.Assessment) to "Deep spending breakdown & export reports",

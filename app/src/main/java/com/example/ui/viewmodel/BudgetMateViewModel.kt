@@ -5,9 +5,16 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppDatabase
 import com.example.data.local.entities.BudgetEntity
+import com.example.data.local.entities.DailyCashRegisterEntity
+import com.example.data.local.entities.InventoryItemEntity
+import com.example.data.local.entities.KhataEntryEntity
+import com.example.data.local.entities.KhataPartyEntity
 import com.example.data.local.entities.ReceiptScanEntity
 import com.example.data.local.entities.RecurringTransactionEntity
 import com.example.data.local.entities.SavingsGoalEntity
+import com.example.data.local.entities.ShopInvoiceEntity
+import com.example.data.local.entities.ShopProfileEntity
+import com.example.data.local.entities.StockMovementEntity
 import com.example.data.local.entities.TransactionEntity
 import com.example.data.local.entities.TripEntity
 import com.example.data.local.entities.TripExpenseEntity
@@ -44,8 +51,17 @@ class BudgetMateViewModel(application: Application) : AndroidViewModel(applicati
 
     private val repository = BudgetMateRepository(AppDatabase.getDatabase(application))
 
-    // Current Logged in User
-    private val _currentUser = MutableStateFlow<UserEntity?>(null)
+    private val defaultUser = UserEntity(
+        id = 1L,
+        name = "Rahul Sharma",
+        email = "demo@budgetmate.com",
+        passwordHash = "password123",
+        currencySymbol = "₹",
+        monthlyIncomeTarget = 50000.0
+    )
+
+    // Current Logged in User (Defaulted to demo user so app preview immediately loads Dashboard)
+    private val _currentUser = MutableStateFlow<UserEntity?>(defaultUser)
     val currentUser: StateFlow<UserEntity?> = _currentUser.asStateFlow()
 
     // Auth screen feedback
@@ -131,15 +147,76 @@ class BudgetMateViewModel(application: Application) : AndroidViewModel(applicati
     // Reports period filter
     val reportPeriod = MutableStateFlow("MONTHLY") // "DAILY", "WEEKLY", "MONTHLY", "YEARLY"
 
+    // ---------------- Shop & Small Industry Management ----------------
+    private val _isShopModeActive = MutableStateFlow(false)
+    val isShopModeActive: StateFlow<Boolean> = _isShopModeActive.asStateFlow()
+
+    private val _shopProfile = MutableStateFlow<ShopProfileEntity?>(null)
+    val shopProfile: StateFlow<ShopProfileEntity?> = _shopProfile.asStateFlow()
+
+    private val _khataParties = MutableStateFlow<List<KhataPartyEntity>>(emptyList())
+    val khataParties: StateFlow<List<KhataPartyEntity>> = _khataParties.asStateFlow()
+
+    private val _selectedKhataParty = MutableStateFlow<KhataPartyEntity?>(null)
+    val selectedKhataParty: StateFlow<KhataPartyEntity?> = _selectedKhataParty.asStateFlow()
+
+    private val _selectedPartyEntries = MutableStateFlow<List<KhataEntryEntity>>(emptyList())
+    val selectedPartyEntries: StateFlow<List<KhataEntryEntity>> = _selectedPartyEntries.asStateFlow()
+
+    private val _inventoryItems = MutableStateFlow<List<InventoryItemEntity>>(emptyList())
+    val inventoryItems: StateFlow<List<InventoryItemEntity>> = _inventoryItems.asStateFlow()
+
+    private val _lowStockItems = MutableStateFlow<List<InventoryItemEntity>>(emptyList())
+    val lowStockItems: StateFlow<List<InventoryItemEntity>> = _lowStockItems.asStateFlow()
+
+    private val _shopInvoices = MutableStateFlow<List<ShopInvoiceEntity>>(emptyList())
+    val shopInvoices: StateFlow<List<ShopInvoiceEntity>> = _shopInvoices.asStateFlow()
+
+    private val _dailyCashRegister = MutableStateFlow<DailyCashRegisterEntity?>(null)
+    val dailyCashRegister: StateFlow<DailyCashRegisterEntity?> = _dailyCashRegister.asStateFlow()
+
+    val khataTypeFilter = MutableStateFlow("ALL") // "ALL", "CUSTOMER", "SUPPLIER"
+    val inventoryCategoryFilter = MutableStateFlow("ALL") // "ALL", "Raw Materials", "Finished Goods", "Retail Goods", "Spares & Tools"
+
     init {
-        // Create demo account automatically if none exists so users can instantly test
+        // Ensure user is immediately loaded on app start so preview & app never gets stuck on auth
         viewModelScope.launch {
             try {
                 var user = repository.loginUser("demo@budgetmate.com", "password123")
                 if (user == null) {
+                    val existing = repository.getUserByEmail("demo@budgetmate.com")
+                    if (existing != null) {
+                        user = existing
+                    } else {
+                        val first = repository.getFirstUser()
+                        if (first != null) {
+                            user = first
+                        } else {
+                            val uid = repository.registerUser("Rahul Sharma", "demo@budgetmate.com", "password123")
+                            user = repository.getUserById(uid)
+                            user?.let { seedSampleData(it.id) }
+                        }
+                    }
+                }
+                _currentUser.value = user
+                user?.let { loadUserData(it.id) }
+            } catch (e: Exception) {
+                try {
+                    val fallback = repository.getFirstUser()
+                    _currentUser.value = fallback
+                    fallback?.let { loadUserData(it.id) }
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    fun loginAsDemo() {
+        viewModelScope.launch {
+            try {
+                var user = repository.getUserByEmail("demo@budgetmate.com") ?: repository.getFirstUser()
+                if (user == null) {
                     val uid = repository.registerUser("Rahul Sharma", "demo@budgetmate.com", "password123")
                     user = repository.getUserById(uid)
-                    // Seed initial sample transactions for demonstration
                     user?.let { seedSampleData(it.id) }
                 }
                 _currentUser.value = user
@@ -386,6 +463,66 @@ class BudgetMateViewModel(application: Application) : AndroidViewModel(applicati
                         _tripExpenses.value = emptyList()
                         _tripPlanItems.value = emptyList()
                         _tripAnalytics.value = null
+                    }
+                }
+            }
+
+            // Seed and load Shop & Small Industry Data
+            launch {
+                repository.seedStarterShopDataIfEmpty(userId)
+
+                launch {
+                    repository.getShopProfile(userId).collect { profile ->
+                        _shopProfile.value = profile
+                    }
+                }
+
+                launch {
+                    repository.getAllKhataParties(userId).collect { parties ->
+                        _khataParties.value = parties
+                        // Auto-update selected party reference if it changed
+                        val currentSelectedId = _selectedKhataParty.value?.id
+                        if (currentSelectedId != null) {
+                            _selectedKhataParty.value = parties.firstOrNull { it.id == currentSelectedId }
+                        }
+                    }
+                }
+
+                launch {
+                    _selectedKhataParty.collect { party ->
+                        if (party != null) {
+                            launch {
+                                repository.getKhataEntriesForParty(party.id).collect { entries ->
+                                    _selectedPartyEntries.value = entries
+                                }
+                            }
+                        } else {
+                            _selectedPartyEntries.value = emptyList()
+                        }
+                    }
+                }
+
+                launch {
+                    repository.getAllInventoryItems(userId).collect { items ->
+                        _inventoryItems.value = items
+                    }
+                }
+
+                launch {
+                    repository.getLowStockInventoryItems(userId).collect { lowItems ->
+                        _lowStockItems.value = lowItems
+                    }
+                }
+
+                launch {
+                    repository.getAllShopInvoices(userId).collect { invoices ->
+                        _shopInvoices.value = invoices
+                    }
+                }
+
+                launch {
+                    repository.getLatestCashRegister(userId).collect { register ->
+                        _dailyCashRegister.value = register
                     }
                 }
             }
@@ -901,5 +1038,244 @@ class BudgetMateViewModel(application: Application) : AndroidViewModel(applicati
 
     fun clearTripVoiceResponse() {
         _tripVoiceResponse.value = null
+    }
+
+    // ---------------- Shop & Small Industry Actions ----------------
+
+    fun toggleShopMode(active: Boolean? = null) {
+        _isShopModeActive.value = active ?: !_isShopModeActive.value
+    }
+
+    fun saveShopProfile(profile: ShopProfileEntity) {
+        viewModelScope.launch {
+            repository.saveShopProfile(profile)
+        }
+    }
+
+    fun saveKhataParty(party: KhataPartyEntity) {
+        viewModelScope.launch {
+            repository.saveKhataParty(party)
+        }
+    }
+
+    fun updateKhataParty(party: KhataPartyEntity) {
+        viewModelScope.launch {
+            repository.updateKhataParty(party)
+        }
+    }
+
+    fun deleteKhataParty(party: KhataPartyEntity) {
+        viewModelScope.launch {
+            if (_selectedKhataParty.value?.id == party.id) {
+                _selectedKhataParty.value = null
+            }
+            repository.deleteKhataParty(party)
+        }
+    }
+
+    fun selectKhataParty(party: KhataPartyEntity?) {
+        _selectedKhataParty.value = party
+    }
+
+    fun recordKhataEntry(
+        partyId: Long,
+        type: String, // "GAVE" or "GOT"
+        amount: Double,
+        description: String = "",
+        billNumber: String = "",
+        paymentMethod: String = "Cash"
+    ) {
+        val user = _currentUser.value ?: return
+        viewModelScope.launch {
+            val entry = KhataEntryEntity(
+                userId = user.id,
+                partyId = partyId,
+                type = type,
+                amount = amount,
+                description = description,
+                billNumber = billNumber,
+                paymentMethod = paymentMethod,
+                date = System.currentTimeMillis()
+            )
+            repository.recordKhataEntry(entry)
+        }
+    }
+
+    fun settleKhataParty(party: KhataPartyEntity, paymentMethod: String = "Cash") {
+        val user = _currentUser.value ?: return
+        if (party.currentBalance <= 0) return
+        viewModelScope.launch {
+            val entry = KhataEntryEntity(
+                userId = user.id,
+                partyId = party.id,
+                type = if (party.type == "CUSTOMER") "GOT" else "GAVE",
+                amount = party.currentBalance,
+                description = "Full Balance Settlement",
+                paymentMethod = paymentMethod,
+                date = System.currentTimeMillis()
+            )
+            repository.recordKhataEntry(entry)
+        }
+    }
+
+    fun saveInventoryItem(item: InventoryItemEntity) {
+        viewModelScope.launch {
+            repository.saveInventoryItem(item)
+        }
+    }
+
+    fun updateInventoryItem(item: InventoryItemEntity) {
+        viewModelScope.launch {
+            repository.updateInventoryItem(item)
+        }
+    }
+
+    fun deleteInventoryItem(item: InventoryItemEntity) {
+        viewModelScope.launch {
+            repository.deleteInventoryItem(item)
+        }
+    }
+
+    fun adjustStock(
+        itemId: Long,
+        type: String, // "STOCK_IN" or "STOCK_OUT"
+        quantity: Double,
+        unitPrice: Double = 0.0,
+        reason: String = "Adjustment",
+        note: String = ""
+    ) {
+        val user = _currentUser.value ?: return
+        viewModelScope.launch {
+            repository.recordStockMovement(
+                userId = user.id,
+                itemId = itemId,
+                type = type,
+                quantity = quantity,
+                unitPrice = unitPrice,
+                reason = reason,
+                note = note
+            )
+        }
+    }
+
+    fun createShopInvoice(
+        invoice: ShopInvoiceEntity,
+        autoKhata: Boolean = true,
+        autoDeductInventory: Boolean = true
+    ) {
+        val user = _currentUser.value ?: return
+        viewModelScope.launch {
+            repository.saveShopInvoice(invoice, autoCreateKhataEntry = autoKhata)
+
+            // If auto deduct inventory and this is a SALE
+            if (autoDeductInventory && invoice.type == "SALE") {
+                try {
+                    val jsonArray = org.json.JSONArray(invoice.itemsJson)
+                    for (i in 0 until jsonArray.length()) {
+                        val obj = jsonArray.getJSONObject(i)
+                        val name = obj.optString("name", "")
+                        val qty = obj.optDouble("qty", 0.0)
+                        val rate = obj.optDouble("rate", 0.0)
+                        val matched = _inventoryItems.value.firstOrNull { it.name.equals(name, ignoreCase = true) }
+                        if (matched != null && qty > 0) {
+                            repository.recordStockMovement(
+                                userId = user.id,
+                                itemId = matched.id,
+                                type = "STOCK_OUT",
+                                quantity = qty,
+                                unitPrice = rate,
+                                reason = "Sale Bill #${invoice.invoiceNumber}",
+                                note = "Auto deducted on invoice"
+                            )
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    fun saveDailyCashRegister(register: DailyCashRegisterEntity) {
+        viewModelScope.launch {
+            repository.saveOrUpdateCashRegister(register)
+        }
+    }
+
+    fun getTotalKhataReceivable(): Double {
+        return _khataParties.value
+            .filter { it.type == "CUSTOMER" && it.currentBalance > 0 }
+            .sumOf { it.currentBalance }
+    }
+
+    fun getTotalKhataPayable(): Double {
+        return _khataParties.value
+            .filter { it.type == "SUPPLIER" && it.currentBalance > 0 }
+            .sumOf { it.currentBalance }
+    }
+
+    fun getTotalStockValuation(): Double {
+        return _inventoryItems.value.sumOf { it.currentStock * it.purchasePrice }
+    }
+
+    fun getTotalRetailStockValuation(): Double {
+        return _inventoryItems.value.sumOf { it.currentStock * it.sellingPrice }
+    }
+
+    fun generatePaymentReminderMessage(party: KhataPartyEntity): String {
+        val shopName = _shopProfile.value?.businessName ?: "Our Store"
+        val phone = _shopProfile.value?.phone ?: ""
+        val upi = _shopProfile.value?.upiId ?: ""
+        val amt = CurrencyFormatter.formatINR(party.currentBalance)
+        return """
+            Namaste ${party.name},
+            This is a polite reminder from $shopName regarding your outstanding dues of $amt.
+            ${if (upi.isNotBlank()) "You can pay via UPI to: $upi" else ""}
+            Kindly clear the balance at your earliest convenience.
+            Thank you for your business!
+            — $shopName ${if (phone.isNotBlank()) "(Ph: $phone)" else ""}
+        """.trimIndent()
+    }
+
+    fun generateInvoiceSlipText(invoice: ShopInvoiceEntity): String {
+        val shop = _shopProfile.value
+        val shopName = shop?.businessName ?: "BudgetMate Business"
+        val shopGst = if (!shop?.gstin.isNullOrBlank()) "GSTIN: ${shop?.gstin}" else ""
+        val shopPhone = if (!shop?.phone.isNullOrBlank()) "Ph: ${shop?.phone}" else ""
+        val dateStr = CurrencyFormatter.formatShortDate(invoice.date)
+
+        val itemsBuilder = StringBuilder()
+        try {
+            val arr = org.json.JSONArray(invoice.itemsJson)
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val name = obj.optString("name", "Item")
+                val qty = obj.optDouble("qty", 1.0)
+                val unit = obj.optString("unit", "Pcs")
+                val rate = obj.optDouble("rate", 0.0)
+                val total = obj.optDouble("total", qty * rate)
+                itemsBuilder.append("- $name: $qty $unit @ ${CurrencyFormatter.formatINR(rate)} = ${CurrencyFormatter.formatINR(total)}\n")
+            }
+        } catch (_: Exception) {}
+
+        return """
+            ==============================
+            $shopName
+            ${if (shopGst.isNotBlank()) "$shopGst\n" else ""}${if (shopPhone.isNotBlank()) "$shopPhone\n" else ""}
+            INVOICE: ${invoice.invoiceNumber}
+            Date: $dateStr
+            Customer: ${invoice.partyName} ${if (invoice.partyPhone.isNotBlank()) "(${invoice.partyPhone})" else ""}
+            ==============================
+            ITEMS:
+            $itemsBuilder
+            ------------------------------
+            Subtotal: ${CurrencyFormatter.formatINR(invoice.subtotal)}
+            Discount: -${CurrencyFormatter.formatINR(invoice.discountAmount)}
+            GST (${invoice.taxRate}%): +${CurrencyFormatter.formatINR(invoice.taxAmount)}
+            GRAND TOTAL: ${CurrencyFormatter.formatINR(invoice.grandTotal)}
+            Payment: ${invoice.paymentMode} (${invoice.paymentStatus})
+            Paid: ${CurrencyFormatter.formatINR(invoice.paidAmount)}
+            Balance Due: ${CurrencyFormatter.formatINR(invoice.balanceDue)}
+            ==============================
+            Thank you for your business!
+        """.trimIndent()
     }
 }

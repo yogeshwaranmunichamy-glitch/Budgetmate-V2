@@ -118,6 +118,14 @@ fun VoiceAssistantScreen(viewModel: BudgetMateViewModel) {
     }
 
     val categorizedSamples = listOf(
+        "🏬 Shop & Khata Voice Entries" to listOf(
+            "Customer Ramesh gave 500 cash",
+            "Sold 2 bags rice 1200 to Suresh udhar",
+            "Stock in 20 bags cement buy price 320",
+            "குமார் 1000 ரூபாய் பாக்கி (Kumar 1000 Udhar)",
+            "सुरेश को 500 नकद दिया (Gave Suresh 500 cash)",
+            "Paid shop helper wages 400"
+        ),
         "📊 Financial Overview & Balance" to listOf(
             "How much did I spend this month?",
             "Current balance?",
@@ -140,7 +148,8 @@ fun VoiceAssistantScreen(viewModel: BudgetMateViewModel) {
     val availableCategories = listOf(
         "Food", "Groceries", "Transport", "Petrol", "Shopping", "Rent",
         "Electricity", "Water", "Internet", "Mobile Recharge", "Medical",
-        "Education", "Entertainment", "Travel", "Subscriptions", "Salary", "Freelance", "Other"
+        "Education", "Entertainment", "Travel", "Subscriptions", "Salary", "Freelance",
+        "Shop Inventory", "Raw Materials", "Staff Wages", "Transport & Freight", "Other"
     )
 
     Column(

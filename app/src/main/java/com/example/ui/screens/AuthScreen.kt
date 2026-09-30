@@ -32,6 +32,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -255,6 +256,17 @@ fun AuthScreen(viewModel: BudgetMateViewModel) {
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
+
+                // Instant Demo Access Button
+                OutlinedButton(
+                    onClick = { viewModel.loginAsDemo() },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("quick_demo_login_button")
+                ) {
+                    Text("🚀 Quick Demo & Shop Preview", fontWeight = FontWeight.Bold, color = EmeraldPrimary)
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // Mode switch links
                 if (mode == AuthMode.LOGIN) {

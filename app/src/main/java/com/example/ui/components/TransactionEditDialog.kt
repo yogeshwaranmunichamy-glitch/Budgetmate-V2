@@ -57,10 +57,11 @@ import com.example.ui.theme.IncomeGreen
 fun TransactionEditDialog(
     userId: Long,
     existingTransaction: TransactionEntity? = null,
+    initialType: String = "EXPENSE",
     onDismiss: () -> Unit,
     onSave: (TransactionEntity) -> Unit
 ) {
-    var type by remember { mutableStateOf(existingTransaction?.type ?: "EXPENSE") }
+    var type by remember { mutableStateOf(existingTransaction?.type ?: initialType) }
     var amountText by remember { mutableStateOf(existingTransaction?.let { if (it.amount > 0) it.amount.toString() else "" } ?: "") }
     var category by remember { mutableStateOf(existingTransaction?.category ?: if (type == "INCOME") "Salary" else "Food") }
     var paymentMethod by remember { mutableStateOf(existingTransaction?.paymentMethod ?: "UPI") }
