@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.example.data.local.dao.BudgetDao
 import com.example.data.local.dao.MLFeedbackDao
+import com.example.data.local.dao.PaymentReminderDao
 import com.example.data.local.dao.ReceiptDao
 import com.example.data.local.dao.RecurringDao
 import com.example.data.local.dao.SavingsGoalDao
@@ -21,6 +22,7 @@ import com.example.data.local.entities.InventoryItemEntity
 import com.example.data.local.entities.KhataEntryEntity
 import com.example.data.local.entities.KhataPartyEntity
 import com.example.data.local.entities.MLFeedbackEntity
+import com.example.data.local.entities.PaymentReminderEntity
 import com.example.data.local.entities.ReceiptScanEntity
 import com.example.data.local.entities.RecurringTransactionEntity
 import com.example.data.local.entities.SavingsGoalEntity
@@ -51,9 +53,10 @@ import com.example.data.local.entities.UserEntity
         InventoryItemEntity::class,
         StockMovementEntity::class,
         ShopInvoiceEntity::class,
-        DailyCashRegisterEntity::class
+        DailyCashRegisterEntity::class,
+        PaymentReminderEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -68,6 +71,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun tripExpenseDao(): TripExpenseDao
     abstract fun tripPlanItemDao(): TripPlanItemDao
     abstract fun shopDao(): ShopDao
+    abstract fun paymentReminderDao(): PaymentReminderDao
 
     companion object {
         @Volatile

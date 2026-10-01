@@ -7,6 +7,7 @@ import com.example.data.local.entities.InventoryItemEntity
 import com.example.data.local.entities.KhataEntryEntity
 import com.example.data.local.entities.KhataPartyEntity
 import com.example.data.local.entities.MLFeedbackEntity
+import com.example.data.local.entities.PaymentReminderEntity
 import com.example.data.local.entities.ReceiptScanEntity
 import com.example.data.local.entities.RecurringTransactionEntity
 import com.example.data.local.entities.SavingsGoalEntity
@@ -39,6 +40,7 @@ class BudgetMateRepository(private val database: AppDatabase) {
     private val tripExpenseDao = database.tripExpenseDao()
     private val tripPlanItemDao = database.tripPlanItemDao()
     private val shopDao = database.shopDao()
+    private val paymentReminderDao = database.paymentReminderDao()
 
     // ---------------- Password & Security ----------------
     fun hashPassword(password: String, salt: String = "BudgetMateSalt2026"): String {
@@ -586,5 +588,97 @@ class BudgetMateRepository(private val database: AppDatabase) {
                 notes = "Drawer tallies with physical cash count"
             )
         )
+    }
+
+    // ---------------- Payment & Loan Reminders ----------------
+    fun getAllPaymentReminders(userId: Long): Flow<List<PaymentReminderEntity>> =
+        paymentReminderDao.getAllReminders(userId)
+
+    fun getPendingPaymentReminders(userId: Long): Flow<List<PaymentReminderEntity>> =
+        paymentReminderDao.getPendingReminders(userId)
+
+    suspend fun savePaymentReminder(reminder: PaymentReminderEntity): Long =
+        paymentReminderDao.insertReminder(reminder)
+
+    suspend fun updatePaymentReminder(reminder: PaymentReminderEntity) =
+        paymentReminderDao.updateReminder(reminder)
+
+    suspend fun deletePaymentReminder(reminder: PaymentReminderEntity) =
+        paymentReminderDao.deleteReminder(reminder)
+
+    suspend fun markPaymentReminderCompleted(id: Long) =
+        paymentReminderDao.markCompleted(id)
+
+    suspend fun snoozePaymentReminder(id: Long, newDueDate: Long) =
+        paymentReminderDao.snoozeReminder(id, newDueDate)
+
+    suspend fun togglePaymentReminderAlarm(id: Long, enabled: Boolean) =
+        paymentReminderDao.toggleAlarm(id, enabled)
+
+    suspend fun seedStarterPaymentRemindersIfEmpty(userId: Long) {
+        val now = System.currentTimeMillis()
+        val dayMillis = 86400000L
+        val list = listOf(
+            PaymentReminderEntity(
+                userId = userId,
+                title = "Ramesh Udhar Repayment",
+                personOrEntity = "Ramesh Kumar",
+                amount = 500.0,
+                reminderType = "TO_COLLECT",
+                dueDate = now + (dayMillis * 1), // Tomorrow
+                reminderTime = "10:00 AM",
+                isAlarmEnabled = true,
+                priority = "HIGH",
+                phoneNumber = "9840123456",
+                notes = "Borrowed 500 for emergency grocery, promised to repay by tomorrow",
+                status = "PENDING"
+            ),
+            PaymentReminderEntity(
+                userId = userId,
+                title = "HDFC Car Loan EMI",
+                personOrEntity = "HDFC Bank",
+                amount = 12500.0,
+                reminderType = "TO_PAY",
+                dueDate = now + (dayMillis * 3), // In 3 days
+                reminderTime = "09:00 AM",
+                isAlarmEnabled = true,
+                priority = "URGENT",
+                phoneNumber = "18002026161",
+                notes = "Auto-debit from HDFC Salary Account (Account ending 4892)",
+                status = "PENDING",
+                repeatInterval = "MONTHLY"
+            ),
+            PaymentReminderEntity(
+                userId = userId,
+                title = "Suresh Goods Bill Payment",
+                personOrEntity = "Suresh Sharma",
+                amount = 1800.0,
+                reminderType = "TO_COLLECT",
+                dueDate = now + (dayMillis * 2), // In 2 days
+                reminderTime = "04:30 PM",
+                isAlarmEnabled = true,
+                priority = "NORMAL",
+                phoneNumber = "9840987654",
+                notes = "Retail goods delivered on credit, pending UPI payment",
+                status = "PENDING"
+            ),
+            PaymentReminderEntity(
+                userId = userId,
+                title = "Shop Electricity Bill",
+                personOrEntity = "TNEB Power Dept",
+                amount = 2450.0,
+                reminderType = "BILL",
+                dueDate = now + (dayMillis * 5),
+                reminderTime = "11:00 AM",
+                isAlarmEnabled = true,
+                priority = "NORMAL",
+                phoneNumber = "",
+                notes = "Consumer No: 04-239-112-984. Pay before due date to avoid surcharge",
+                status = "PENDING"
+            )
+        )
+        for (rem in list) {
+            paymentReminderDao.insertReminder(rem)
+        }
     }
 }

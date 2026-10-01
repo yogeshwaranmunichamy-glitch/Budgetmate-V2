@@ -9,6 +9,7 @@ import com.example.data.local.entities.DailyCashRegisterEntity
 import com.example.data.local.entities.InventoryItemEntity
 import com.example.data.local.entities.KhataEntryEntity
 import com.example.data.local.entities.KhataPartyEntity
+import com.example.data.local.entities.PaymentReminderEntity
 import com.example.data.local.entities.ReceiptScanEntity
 import com.example.data.local.entities.RecurringTransactionEntity
 import com.example.data.local.entities.SavingsGoalEntity
@@ -21,6 +22,7 @@ import com.example.data.local.entities.TripExpenseEntity
 import com.example.data.local.entities.TripPlanItemEntity
 import com.example.data.local.entities.UserEntity
 import com.example.data.repository.BudgetMateRepository
+import com.example.util.AlarmReminderManager
 import com.example.ml.ComprehensiveSpendingAnalysis
 import com.example.ml.DebtSettlement
 import com.example.ml.MultilingualNLP
@@ -74,6 +76,15 @@ class BudgetMateViewModel(application: Application) : AndroidViewModel(applicati
     // Active bottom navigation destination
     private val _currentScreen = MutableStateFlow("dashboard") // dashboard, transactions, voice, budget, savings, reports, profile
     val currentScreen: StateFlow<String> = _currentScreen.asStateFlow()
+
+    // Mode Switch: "PERSONAL" vs "BUSINESS"
+    private val _appMode = MutableStateFlow("PERSONAL")
+    val appMode: StateFlow<String> = _appMode.asStateFlow()
+
+    fun setAppMode(mode: String) {
+        _appMode.value = mode
+        _isShopModeActive.value = (mode == "BUSINESS")
+    }
 
     // Transactions
     private val _transactions = MutableStateFlow<List<TransactionEntity>>(emptyList())
@@ -177,6 +188,13 @@ class BudgetMateViewModel(application: Application) : AndroidViewModel(applicati
 
     val khataTypeFilter = MutableStateFlow("ALL") // "ALL", "CUSTOMER", "SUPPLIER"
     val inventoryCategoryFilter = MutableStateFlow("ALL") // "ALL", "Raw Materials", "Finished Goods", "Retail Goods", "Spares & Tools"
+
+    // ---------------- Payment Reminders & Loan Alerts ----------------
+    private val _paymentReminders = MutableStateFlow<List<PaymentReminderEntity>>(emptyList())
+    val paymentReminders: StateFlow<List<PaymentReminderEntity>> = _paymentReminders.asStateFlow()
+
+    private val _activeAlarmReminder = MutableStateFlow<PaymentReminderEntity?>(null)
+    val activeAlarmReminder: StateFlow<PaymentReminderEntity?> = _activeAlarmReminder.asStateFlow()
 
     init {
         // Ensure user is immediately loaded on app start so preview & app never gets stuck on auth
@@ -523,6 +541,14 @@ class BudgetMateViewModel(application: Application) : AndroidViewModel(applicati
                 launch {
                     repository.getLatestCashRegister(userId).collect { register ->
                         _dailyCashRegister.value = register
+                    }
+                }
+
+                // Seed and load Payment & Loan Reminders
+                launch {
+                    repository.seedStarterPaymentRemindersIfEmpty(userId)
+                    repository.getAllPaymentReminders(userId).collect { reminders ->
+                        _paymentReminders.value = reminders
                     }
                 }
             }
@@ -1277,5 +1303,60 @@ class BudgetMateViewModel(application: Application) : AndroidViewModel(applicati
             ==============================
             Thank you for your business!
         """.trimIndent()
+    }
+
+    // ---------------- Payment & Loan Reminders Actions ----------------
+
+    fun savePaymentReminder(reminder: PaymentReminderEntity) {
+        val user = _currentUser.value ?: return
+        viewModelScope.launch {
+            val id = repository.savePaymentReminder(reminder.copy(userId = user.id))
+            val saved = reminder.copy(id = if (reminder.id != 0L) reminder.id else id, userId = user.id)
+            AlarmReminderManager.scheduleAlarm(getApplication(), saved)
+        }
+    }
+
+    fun markPaymentReminderCompleted(reminder: PaymentReminderEntity) {
+        viewModelScope.launch {
+            repository.markPaymentReminderCompleted(reminder.id)
+            AlarmReminderManager.cancelAlarm(getApplication(), reminder.id)
+        }
+    }
+
+    fun snoozePaymentReminder(reminder: PaymentReminderEntity, additionalHours: Int = 24) {
+        viewModelScope.launch {
+            val newDue = System.currentTimeMillis() + (additionalHours * 3600000L)
+            repository.snoozePaymentReminder(reminder.id, newDue)
+            AlarmReminderManager.scheduleAlarm(getApplication(), reminder.copy(dueDate = newDue, status = "SNOOZED"))
+        }
+    }
+
+    fun deletePaymentReminder(reminder: PaymentReminderEntity) {
+        viewModelScope.launch {
+            repository.deletePaymentReminder(reminder)
+            AlarmReminderManager.cancelAlarm(getApplication(), reminder.id)
+        }
+    }
+
+    fun togglePaymentReminderAlarm(reminder: PaymentReminderEntity) {
+        viewModelScope.launch {
+            val newEnabled = !reminder.isAlarmEnabled
+            repository.togglePaymentReminderAlarm(reminder.id, newEnabled)
+            if (newEnabled) {
+                AlarmReminderManager.scheduleAlarm(getApplication(), reminder.copy(isAlarmEnabled = true))
+            } else {
+                AlarmReminderManager.cancelAlarm(getApplication(), reminder.id)
+            }
+        }
+    }
+
+    fun triggerAlarmTest(reminder: PaymentReminderEntity) {
+        _activeAlarmReminder.value = reminder
+        AlarmReminderManager.playTestAlarm(getApplication())
+    }
+
+    fun dismissAlarmTest() {
+        _activeAlarmReminder.value = null
+        AlarmReminderManager.stopTestAlarm()
     }
 }

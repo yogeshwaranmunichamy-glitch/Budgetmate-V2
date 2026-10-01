@@ -25,9 +25,12 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FlightTakeoff
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -46,10 +49,12 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -93,11 +98,15 @@ fun VoiceTransactionDialog(
     userId: Long,
     onDismiss: () -> Unit,
     onConfirmSave: (TransactionEntity, originalPredictedCategory: String) -> Unit = { _, _ -> },
-    viewModel: BudgetMateViewModel? = null
+    viewModel: BudgetMateViewModel? = null,
+    initialPanel: String = "PERSONAL"
 ) {
     val coroutineScope = rememberCoroutineScope()
     val voiceState = rememberVoiceInputState()
     val ttsState = rememberTextToSpeechState()
+
+    var activePanel by remember { mutableStateOf(initialPanel) }
+    val activeTrip = viewModel?.activeTrip?.collectAsState()?.value
 
     var currentStep by remember { mutableStateOf(VoiceFlowStep.RECORDING) }
     var selectedLanguage by remember { mutableStateOf("Tamil + English") }
@@ -123,16 +132,34 @@ fun VoiceTransactionDialog(
         "Education", "Entertainment", "Travel", "Insurance", "EMI", "Subscriptions", "Salary", "Other"
     )
 
-    // Realistic voice input sample presets matching user requests
-    val realisticPresets = listOf(
-        "I spent ₹500 for petrol, ₹300 for food, ₹200 for parking and ₹1,000 for hotel.",
-        "I spent 500 on petrol and 300 for food.",
-        "Petrol 500, food 300, parking 200.",
-        "Today I spent around 500 for fuel, 250 for lunch and 100 for parking.",
-        "Inniku petrol-ku 500, food-ku 300 apram parking 200 kuduthen",
-        "Paid 450 for Swiggy dinner and 1500 for shopping",
-        "Petrol 600, groceries 1200, toll 100 and snacks 150"
-    )
+    // Realistic voice input sample presets matching user requests, adapting to activePanel
+    val realisticPresets = remember(activePanel, activeTrip) {
+        when (activePanel) {
+            "BUSINESS" -> listOf(
+                "Cash sale ₹1,500 for goods sold.",
+                "Received ₹2,500 payment from Ramesh Kumar via UPI.",
+                "Gave ₹1,200 udhar to Suresh for retail products.",
+                "Paid ₹4,000 to raw material supplier.",
+                "Cash sale ₹850 and ₹350 tea snacks expense."
+            )
+            "TRIP" -> listOf(
+                "Dinner ₹1,800 split by Rahul and Amit.",
+                "Hotel booking ₹4,500 paid with Credit Card.",
+                "Cab to beach resort ₹650 paid with UPI.",
+                "Scuba diving ₹3,200 paid by me.",
+                "Breakfast snacks ₹350 cash."
+            )
+            else -> listOf(
+                "I spent ₹500 for petrol, ₹300 for food, ₹200 for parking and ₹1,000 for hotel.",
+                "I spent 500 on petrol and 300 for food.",
+                "Petrol 500, food 300, parking 200.",
+                "Today I spent around 500 for fuel, 250 for lunch and 100 for parking.",
+                "Inniku petrol-ku 500, food-ku 300 apram parking 200 kuduthen",
+                "Paid 450 for Swiggy dinner and 1500 for shopping",
+                "Petrol 600, groceries 1200, toll 100 and snacks 150"
+            )
+        }
+    }
 
     fun processInitialSpeech(spokenText: String) {
         if (spokenText.isBlank()) return
@@ -158,6 +185,12 @@ fun VoiceTransactionDialog(
         isSaving = true
 
         val now = System.currentTimeMillis()
+        val tagPrefix = when (activePanel) {
+            "BUSINESS" -> "[Business] "
+            "TRIP" -> if (activeTrip != null) "[Trip: ${activeTrip.name}] " else "[Trip] "
+            else -> ""
+        }
+
         val entities = itemsToSave.map { item ->
             TransactionEntity(
                 userId = userId,
@@ -167,10 +200,30 @@ fun VoiceTransactionDialog(
                 paymentMethod = item.paymentMethod.ifBlank { "UPI" },
                 sourceOrMerchant = item.merchant.ifBlank { item.category },
                 date = now,
-                notes = "Voice: ${item.rawText.ifBlank { speechTranscript }}",
+                notes = "${tagPrefix}Voice: ${item.rawText.ifBlank { speechTranscript }}",
                 isVoiceEntered = true,
                 confidenceScore = item.confidenceScore
             )
+        }
+
+        if (activePanel == "TRIP" && activeTrip != null && viewModel != null) {
+            itemsToSave.forEach { item ->
+                viewModel.addTripExpense(
+                    com.example.data.local.entities.TripExpenseEntity(
+                        tripId = activeTrip.id,
+                        userId = userId,
+                        title = item.merchant.ifBlank { item.category },
+                        amount = item.amount,
+                        category = item.category,
+                        paidBy = "Me",
+                        splitAmong = "All",
+                        date = now,
+                        paymentMethod = item.paymentMethod.ifBlank { "UPI" },
+                        notes = item.rawText.ifBlank { speechTranscript },
+                        isVoiceLogged = true
+                    )
+                )
+            }
         }
 
         if (viewModel != null) {
@@ -260,20 +313,28 @@ fun VoiceTransactionDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = when (currentStep) {
-                                VoiceFlowStep.RECORDING -> "Voice Expense Input"
-                                VoiceFlowStep.CONFIRMATION -> "Voice Confirmation & Correction"
-                                VoiceFlowStep.DASHBOARD -> "Expense Summary Dashboard"
+                                VoiceFlowStep.RECORDING -> when (activePanel) {
+                                    "BUSINESS" -> "Business Voice Logger"
+                                    "TRIP" -> "Trip Expense Voice Logger"
+                                    else -> "Personal Voice Logger"
+                                }
+                                VoiceFlowStep.CONFIRMATION -> "Voice Confirmation"
+                                VoiceFlowStep.DASHBOARD -> "Voice Summary"
                             },
-                            fontSize = 18.sp,
+                            fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                             text = when (currentStep) {
-                                VoiceFlowStep.RECORDING -> "Multi-Category Natural Speech Processing"
+                                VoiceFlowStep.RECORDING -> when (activePanel) {
+                                    "BUSINESS" -> "Speak sales, customer udhar, or supplier payouts"
+                                    "TRIP" -> if (activeTrip != null) "Logging for: ${activeTrip.name} (${activeTrip.destination})" else "Logging vacation & travel split expenses"
+                                    else -> "Multi-Category natural speech in 5 languages"
+                                }
                                 VoiceFlowStep.CONFIRMATION -> "Listen & Confirm or Correct by Voice"
                                 VoiceFlowStep.DASHBOARD -> "Breakdown & Manual Editing"
                             },
@@ -292,7 +353,107 @@ fun VoiceTransactionDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Dynamic Panel Switcher (Personal / Business / Trip)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(2.dp)
+                    ) {
+                        Row(modifier = Modifier.padding(2.dp)) {
+                            // Personal
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = if (activePanel == "PERSONAL") EmeraldPrimary else Color.Transparent,
+                                modifier = Modifier
+                                    .clickable { activePanel = "PERSONAL" }
+                                    .testTag("voice_panel_personal")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Person,
+                                        contentDescription = null,
+                                        tint = if (activePanel == "PERSONAL") Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        "Personal",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (activePanel == "PERSONAL") Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            // Business
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = if (activePanel == "BUSINESS") EmeraldPrimary else Color.Transparent,
+                                modifier = Modifier
+                                    .clickable { activePanel = "BUSINESS" }
+                                    .testTag("voice_panel_business")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Storefront,
+                                        contentDescription = null,
+                                        tint = if (activePanel == "BUSINESS") Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        "Business",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (activePanel == "BUSINESS") Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            // Trip
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = if (activePanel == "TRIP") EmeraldPrimary else Color.Transparent,
+                                modifier = Modifier
+                                    .clickable { activePanel = "TRIP" }
+                                    .testTag("voice_panel_trip")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.FlightTakeoff,
+                                        contentDescription = null,
+                                        tint = if (activePanel == "TRIP") Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        if (activeTrip != null) activeTrip.name.take(8) else "Trip",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (activePanel == "TRIP") Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // ---------------- STEP 1: RECORDING ----------------
                 if (currentStep == VoiceFlowStep.RECORDING) {

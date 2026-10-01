@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
@@ -62,6 +63,7 @@ import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.BudgetScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.ProfileScreen
+import com.example.ui.screens.RemindersScreen
 import com.example.ui.screens.ReportsScreen
 import com.example.ui.screens.SavingsRecurringScreen
 import com.example.ui.screens.ShopScreen
@@ -115,13 +117,13 @@ fun MainAppContent(viewModel: BudgetMateViewModel) {
 
         val primaryNavItems = listOf(
             NavItem("dashboard", "Home", Icons.Default.AccountBalanceWallet),
-            NavItem("shop", "Shop & Khata", Icons.Default.Storefront),
+            NavItem("voice", "Voice AI", Icons.Default.Mic),
             NavItem("transactions", "History", Icons.Default.ReceiptLong),
-            NavItem("trips", "Trips", Icons.Default.FlightTakeoff),
+            NavItem("shop", "Business", Icons.Default.Storefront),
             NavItem("more", "More", Icons.Default.MoreHoriz)
         )
 
-        val secondaryScreens = listOf("voice", "budget", "savings", "reports", "profile")
+        val secondaryScreens = listOf("budget", "savings", "trips", "reminders", "reports", "profile")
 
         Scaffold(
             modifier = Modifier.fillMaxSize(),
@@ -140,7 +142,8 @@ fun MainAppContent(viewModel: BudgetMateViewModel) {
 
                         val displayTitle = if (isMoreItem && currentScreen in secondaryScreens) {
                             when (currentScreen) {
-                                "voice" -> "Voice"
+                                "trips" -> "Trips"
+                                "reminders" -> "Reminders"
                                 "budget" -> "Budget"
                                 "savings" -> "Goals"
                                 "reports" -> "Reports"
@@ -195,6 +198,7 @@ fun MainAppContent(viewModel: BudgetMateViewModel) {
                     "shop" -> ShopScreen(viewModel = viewModel)
                     "transactions" -> TransactionsScreen(viewModel = viewModel)
                     "trips" -> TripScreen(viewModel = viewModel)
+                    "reminders" -> RemindersScreen(viewModel = viewModel)
                     "voice" -> VoiceAssistantScreen(viewModel = viewModel)
                     "budget" -> BudgetScreen(viewModel = viewModel)
                     "savings" -> SavingsRecurringScreen(viewModel = viewModel)
@@ -237,11 +241,12 @@ fun MainAppContent(viewModel: BudgetMateViewModel) {
                     Spacer(modifier = Modifier.height(14.dp))
 
                     val moreItems = listOf(
-                        Triple("voice", "Multilingual Voice Assistant", Icons.Default.Mic) to "Speech-to-text khata & expense logging in 5 languages",
+                        Triple("reminders", "Payment & Loan Reminders", Icons.Default.Alarm) to "Udhar collection, EMI loans, bills & alarm alerts",
+                        Triple("trips", "Trip Planner & Split", Icons.Default.FlightTakeoff) to "Manage vacation budgets, group splits & currency",
                         Triple("budget", "Budget & Limits", Icons.Default.PieChart) to "Set category spending limits & track alerts",
                         Triple("savings", "Goals & Recurring", Icons.Default.Savings) to "Target emergency funds & recurring bills",
                         Triple("reports", "Reports & Analytics", Icons.Default.Assessment) to "Deep spending breakdown & export reports",
-                        Triple("profile", "User Profile & ML", Icons.Default.Person) to "Account settings, currency & AI models"
+                        Triple("profile", "User Profile & Settings", Icons.Default.Person) to "Account settings, currency & AI models"
                     )
 
                     moreItems.forEach { (navInfo, subtitle) ->
