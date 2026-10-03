@@ -27,14 +27,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -43,6 +47,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -75,9 +81,11 @@ import androidx.core.content.ContextCompat
 import com.example.data.local.entities.ReceiptScanEntity
 import com.example.data.local.entities.TransactionEntity
 import com.example.ml.ParsedReceiptData
+import com.example.ml.ReceiptLineItem
 import com.example.ml.ReceiptOCRParser
 import com.example.ui.theme.EmeraldPrimary
 import com.example.util.CurrencyFormatter
+import java.util.Locale
 
 enum class OcrStep {
     SELECT_SOURCE,
@@ -91,7 +99,8 @@ enum class OcrStep {
 fun ReceiptScannerDialog(
     userId: Long,
     onDismiss: () -> Unit,
-    onReceiptConfirmed: (TransactionEntity, ReceiptScanEntity) -> Unit
+    onReceiptConfirmed: (TransactionEntity, ReceiptScanEntity) -> Unit,
+    onMultipleReceiptItemsConfirmed: ((List<TransactionEntity>, ReceiptScanEntity) -> Unit)? = null
 ) {
     val context = LocalContext.current
 
@@ -101,6 +110,13 @@ fun ReceiptScannerDialog(
     var parsedReceipt by remember { mutableStateOf<ParsedReceiptData?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
+
+    // Line items extracted from receipt
+    var lineItems by remember { mutableStateOf<List<ReceiptLineItem>>(emptyList()) }
+    var splitIntoIndividualTransactions by remember { mutableStateOf(false) }
+    var showAddItemDialog by remember { mutableStateOf(false) }
+    var newItemName by remember { mutableStateOf("") }
+    var newItemPrice by remember { mutableStateOf("") }
 
     // OCR Ad dialog state (only for OCR, fail-safe)
     var showOcrAdDialog by remember { mutableStateOf(false) }
@@ -203,6 +219,7 @@ fun ReceiptScannerDialog(
                 editMerchant = parsed.merchant
                 editAmount = if (parsed.amount > 0) parsed.amount.toString() else ""
                 editCategory = parsed.category
+                lineItems = parsed.parsedItems
                 isProcessing = false
                 currentStep = OcrStep.RESULT
 
@@ -219,6 +236,7 @@ fun ReceiptScannerDialog(
                 editMerchant = fallback.merchant
                 editAmount = fallback.amount.toString()
                 editCategory = fallback.category
+                lineItems = fallback.parsedItems
                 currentStep = OcrStep.RESULT
             }
         }
@@ -279,66 +297,21 @@ fun ReceiptScannerDialog(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "PaddleOCR Scanner",
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = EmeraldPrimary.copy(alpha = 0.15f)
-                                ) {
-                                    Text(
-                                        "v4 Engine",
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = EmeraldPrimary,
-                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-                            Text("Deep learning text detection & recognition", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                    Row {
-                        IconButton(onClick = { showPaddleOcrSettings = !showPaddleOcrSettings }, modifier = Modifier.size(32.dp)) {
-                            Icon(imageVector = Icons.Default.Tune, contentDescription = "PaddleOCR Settings", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                            Icon(imageVector = Icons.Default.Close, contentDescription = "Close Scanner")
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Optional PaddleOCR Hub/Server settings
-                AnimatedVisibility(visible = showPaddleOcrSettings) {
-                    Card(
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text("PaddleOCR Engine Settings", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            Text("Active: On-Device Neural DBNet Engine (Offline). Optional: Connect to your custom PaddleOCR FastAPI or Hub serving endpoint.", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(modifier = Modifier.height(6.dp))
-                            OutlinedTextField(
-                                value = paddleOcrServerUrl,
-                                onValueChange = { paddleOcrServerUrl = it },
-                                label = { Text("PaddleOCR Server URL (Optional)") },
-                                placeholder = { Text("e.g. http://10.0.2.2:8866/predict/ocr_system") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
+                            Text(
+                                text = "Receipt Scanner",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
+                            Text("Scan physical receipts, bills, and tax invoices", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close Scanner")
+                    }
                 }
+
+                Spacer(modifier = Modifier.height(14.dp))
 
                 // Error Banner with Retry
                 AnimatedVisibility(visible = errorMessage != null) {
@@ -454,6 +427,7 @@ fun ReceiptScannerDialog(
                                         editMerchant = parsed.merchant
                                         editAmount = parsed.amount.toString()
                                         editCategory = parsed.category
+                                        lineItems = parsed.parsedItems
                                         currentStep = OcrStep.RESULT
                                     }
                                     .padding(horizontal = 14.dp, vertical = 10.dp)
@@ -541,7 +515,7 @@ fun ReceiptScannerDialog(
                         ) {
                             Icon(imageVector = Icons.Default.DocumentScanner, contentDescription = "Run OCR", modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Run PaddleOCR Scan")
+                            Text("Scan Receipt")
                         }
                     }
                 }
@@ -552,7 +526,7 @@ fun ReceiptScannerDialog(
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = EmeraldPrimary)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Running PaddleOCR DBNet detection & reading-order recognition...",
+                        text = "Extracting receipt text, store, and amounts...",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -578,7 +552,7 @@ fun ReceiptScannerDialog(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "PaddleOCR Extraction Succeeded",
+                                        text = "Receipt Scanned Successfully",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = EmeraldPrimary
@@ -590,7 +564,7 @@ fun ReceiptScannerDialog(
                                             .padding(horizontal = 8.dp, vertical = 2.dp)
                                     ) {
                                         Text(
-                                            text = "${(result.confidence * 100).toInt()}% Match • PaddleOCR",
+                                            text = "${(result.confidence * 100).toInt()}% Match",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = EmeraldPrimary
@@ -609,6 +583,134 @@ fun ReceiptScannerDialog(
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // LINE ITEMS BREAKDOWN CARD (Multiple Items)
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("ocr_line_items_card")
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Receipt, contentDescription = null, tint = EmeraldPrimary, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Items Detected (${lineItems.size})",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    androidx.compose.material3.TextButton(
+                                        onClick = { showAddItemDialog = true },
+                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp), tint = EmeraldPrimary)
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text("+ Add Item", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = EmeraldPrimary)
+                                    }
+                                }
+
+                                if (lineItems.isEmpty()) {
+                                    Text(
+                                        text = "No individual itemized lines detected. Total bill amount captured.",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(vertical = 4.dp)
+                                    )
+                                } else {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        lineItems.forEachIndexed { index, item ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(MaterialTheme.colorScheme.surface)
+                                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = "${if (item.quantity > 1) "${item.quantity}x " else ""}${item.name}",
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                    Text(
+                                                        text = item.category,
+                                                        fontSize = 10.sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        text = "₹${item.price}",
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = EmeraldPrimary
+                                                    )
+                                                    IconButton(
+                                                        onClick = {
+                                                            lineItems = lineItems.toMutableList().also { it.removeAt(index) }
+                                                        },
+                                                        modifier = Modifier.size(28.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.Delete, contentDescription = "Delete item", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    val itemsSum = lineItems.sumOf { it.price }
+                                    Text(
+                                        text = "Items Subtotal: ₹%.2f • Bill Grand Total: ₹%s".format(Locale.US, itemsSum, editAmount),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Save Mode Toggle: Single Consolidated vs Split into Individual Items
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        FilterChip(
+                                            selected = !splitIntoIndividualTransactions,
+                                            onClick = { splitIntoIndividualTransactions = false },
+                                            label = { Text("1 Consolidated Bill", fontSize = 11.sp) },
+                                            modifier = Modifier.weight(1f),
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = EmeraldPrimary.copy(alpha = 0.2f),
+                                                selectedLabelColor = EmeraldPrimary
+                                            )
+                                        )
+                                        FilterChip(
+                                            selected = splitIntoIndividualTransactions,
+                                            onClick = { splitIntoIndividualTransactions = true },
+                                            label = { Text("Split ${lineItems.size} Items", fontSize = 11.sp) },
+                                            modifier = Modifier.weight(1f),
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = EmeraldPrimary.copy(alpha = 0.2f),
+                                                selectedLabelColor = EmeraldPrimary
+                                            )
+                                        )
+                                    }
+                                }
                             }
                         }
 
@@ -727,28 +829,55 @@ fun ReceiptScannerDialog(
                             Button(
                                 onClick = {
                                     val amt = editAmount.toDoubleOrNull() ?: 0.0
-                                    if (amt > 0) {
-                                        val tx = TransactionEntity(
-                                            userId = userId,
-                                            type = "EXPENSE",
-                                            amount = amt,
-                                            category = editCategory,
-                                            paymentMethod = editPaymentMethod,
-                                            sourceOrMerchant = editMerchant.ifBlank { "Receipt Merchant" },
-                                            date = result.date,
-                                            notes = "Scanned Receipt: $editMerchant",
-                                            isReceiptScanned = true,
-                                            confidenceScore = result.confidence
-                                        )
+                                    val finalAmt = if (amt > 0) amt else lineItems.sumOf { it.price }
+                                    if (finalAmt > 0) {
                                         val receiptScan = ReceiptScanEntity(
                                             userId = userId,
-                                            merchant = editMerchant,
-                                            amount = amt,
+                                            merchant = editMerchant.ifBlank { "Receipt Merchant" },
+                                            amount = finalAmt,
                                             date = result.date,
                                             category = editCategory,
                                             rawText = rawOcrText
                                         )
-                                        onReceiptConfirmed(tx, receiptScan)
+
+                                        if (splitIntoIndividualTransactions && lineItems.isNotEmpty()) {
+                                            val transactions = lineItems.map { item ->
+                                                TransactionEntity(
+                                                    userId = userId,
+                                                    type = "EXPENSE",
+                                                    amount = item.price,
+                                                    category = item.category.ifBlank { editCategory },
+                                                    paymentMethod = editPaymentMethod,
+                                                    sourceOrMerchant = "${editMerchant.ifBlank { "Store" }}: ${item.name}",
+                                                    date = result.date,
+                                                    notes = "Receipt item (${item.quantity}x) from ${editMerchant.ifBlank { "Store" }}",
+                                                    isReceiptScanned = true,
+                                                    confidenceScore = result.confidence
+                                                )
+                                            }
+                                            if (onMultipleReceiptItemsConfirmed != null) {
+                                                onMultipleReceiptItemsConfirmed(transactions, receiptScan)
+                                            } else {
+                                                transactions.forEach { onReceiptConfirmed(it, receiptScan) }
+                                            }
+                                        } else {
+                                            val itemsNote = if (lineItems.isNotEmpty()) {
+                                                " | Items: " + lineItems.joinToString(", ") { "${it.name} (₹${it.price})" }
+                                            } else ""
+                                            val tx = TransactionEntity(
+                                                userId = userId,
+                                                type = "EXPENSE",
+                                                amount = finalAmt,
+                                                category = editCategory,
+                                                paymentMethod = editPaymentMethod,
+                                                sourceOrMerchant = editMerchant.ifBlank { "Receipt Merchant" },
+                                                date = result.date,
+                                                notes = "Scanned Receipt: $editMerchant$itemsNote",
+                                                isReceiptScanned = true,
+                                                confidenceScore = result.confidence
+                                            )
+                                            onReceiptConfirmed(tx, receiptScan)
+                                        }
                                         onDismiss()
                                     }
                                 },
@@ -759,13 +888,64 @@ fun ReceiptScannerDialog(
                             ) {
                                 Icon(imageVector = Icons.Default.Check, contentDescription = "Save", modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Save Transaction")
+                                Text(if (splitIntoIndividualTransactions && lineItems.isNotEmpty()) "Save ${lineItems.size} Items" else "Save Transaction")
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    if (showAddItemDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddItemDialog = false },
+            title = { Text("Add Bill Line Item", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = newItemName,
+                        onValueChange = { newItemName = it },
+                        label = { Text("Item Name (e.g. Milk, Dosa)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = newItemPrice,
+                        onValueChange = { newItemPrice = it },
+                        label = { Text("Price (₹)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val p = newItemPrice.toDoubleOrNull() ?: 0.0
+                        if (newItemName.isNotBlank() && p > 0) {
+                            lineItems = lineItems + ReceiptLineItem(
+                                name = newItemName.trim(),
+                                price = p,
+                                quantity = 1,
+                                category = editCategory
+                            )
+                            newItemName = ""
+                            newItemPrice = ""
+                            showAddItemDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
+                ) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showAddItemDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

@@ -715,6 +715,9 @@ fun TransactionsScreen(viewModel: BudgetMateViewModel) {
                 onDismiss = { showReceiptDialog = false },
                 onReceiptConfirmed = { tx, scan ->
                     viewModel.saveReceipt(tx, scan)
+                },
+                onMultipleReceiptItemsConfirmed = { txList, scan ->
+                    viewModel.saveReceiptWithMultipleTransactions(txList, scan)
                 }
             )
         }

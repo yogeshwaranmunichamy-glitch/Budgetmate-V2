@@ -1,6 +1,9 @@
 package com.example.ui.components
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -358,6 +361,45 @@ fun SmsTransactionScannerDialog(
                                 Icon(Icons.Default.Sms, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text("Connect Device SMS Inbox", fontWeight = FontWeight.Bold)
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Helper for sideloaded/GitHub APK restricted settings
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = "Installed from GitHub / Sideloaded APK?",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    Text(
+                                        text = "If Android displays 'Restricted setting', tap below to open App Info -> tap the 3 dots (⋮) in the top-right -> select 'Allow restricted settings' -> then turn on SMS.",
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        lineHeight = 14.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    OutlinedButton(
+                                        onClick = {
+                                            try {
+                                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                                    data = Uri.fromParts("package", context.packageName, null)
+                                                }
+                                                context.startActivity(intent)
+                                            } catch (_: Exception) {}
+                                        },
+                                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                                    ) {
+                                        Text("Open App Info in Phone Settings", fontSize = 11.sp)
+                                    }
+                                }
                             }
                         }
                     }

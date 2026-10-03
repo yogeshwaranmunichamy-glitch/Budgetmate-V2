@@ -65,6 +65,10 @@ android {
         includeInApk = false
         includeInBundle = true
     }
+
+    androidResources {
+        noCompress += listOf("tflite", "onnx", "bin")
+    }
 }
 
 secrets {

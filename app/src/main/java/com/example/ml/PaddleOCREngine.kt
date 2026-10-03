@@ -325,13 +325,19 @@ object PaddleOCREngine {
             }
         }
 
-        // 4. Line Items: lines ending in numbers with decimals that are not total
-        for (line in lines) {
-            val lower = line.lowercase()
-            if (line.matches(".*\\d+\\.\\d{2}$".toRegex()) &&
-                !lower.contains("total") && !lower.contains("tax") && !lower.contains("gst")
-            ) {
-                detectedItems.add(line)
+        // 4. Line Items: extract structured items
+        val structuredItems = ReceiptOCRParser.extractStructuredItems(lines)
+        for (item in structuredItems) {
+            detectedItems.add("${item.name} - ₹${item.price}")
+        }
+        if (detectedItems.isEmpty()) {
+            for (line in lines) {
+                val lower = line.lowercase()
+                if (line.matches(".*\\d+\\.\\d{2}$".toRegex()) &&
+                    !lower.contains("total") && !lower.contains("tax") && !lower.contains("gst")
+                ) {
+                    detectedItems.add(line)
+                }
             }
         }
 
@@ -353,6 +359,7 @@ object PaddleOCREngine {
             date = receiptDate,
             category = category,
             items = detectedItems,
+            parsedItems = structuredItems,
             rawText = rawText,
             confidence = confidence
         )

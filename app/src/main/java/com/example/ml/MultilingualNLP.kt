@@ -281,6 +281,16 @@ object MultilingualNLP {
             }
         }
 
+        // 3. Consult packaged AI-trained model if available
+        if (!learnedMatchFound && AITrainedModelManager.isModelReady()) {
+            val aiPred = AITrainedModelManager.predict(lowerText)
+            if (aiPred.confidence >= 0.70f) {
+                bestCategory = aiPred.category
+                highestScore = (aiPred.confidence * 4.0).toDouble()
+                learnedMatchFound = true
+            }
+        }
+
         if (!learnedMatchFound) {
             for ((category, keywords) in categoryKeywords) {
                 // If it's income, prefer income categories

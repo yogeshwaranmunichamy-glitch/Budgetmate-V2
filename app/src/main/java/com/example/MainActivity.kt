@@ -87,6 +87,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Initialize packaged AI-trained ML model from APK assets
+        com.example.ml.AITrainedModelManager.initialize(applicationContext)
         setContent {
             BudgetMateTheme {
                 MainAppContent(viewModel)

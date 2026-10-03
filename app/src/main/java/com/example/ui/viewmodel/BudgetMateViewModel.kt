@@ -748,6 +748,16 @@ class BudgetMateViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun saveReceiptWithMultipleTransactions(transactions: List<TransactionEntity>, scan: ReceiptScanEntity) {
+        val user = _currentUser.value ?: return
+        viewModelScope.launch {
+            for (tx in transactions) {
+                repository.insertTransaction(tx.copy(userId = user.id))
+            }
+            repository.saveReceipt(scan.copy(userId = user.id))
+        }
+    }
+
     // ---------------- Voice Query Intent Processing ----------------
     fun processVoiceQuery(queryText: String) {
         val user = _currentUser.value ?: return
@@ -1358,5 +1368,121 @@ class BudgetMateViewModel(application: Application) : AndroidViewModel(applicati
     fun dismissAlarmTest() {
         _activeAlarmReminder.value = null
         AlarmReminderManager.stopTestAlarm()
+    }
+
+    // ---------------- Backup & Restore Methods ----------------
+    fun exportFullBackupJson(callback: (String) -> Unit) {
+        val user = _currentUser.value ?: defaultUser
+        viewModelScope.launch {
+            try {
+                val transactions = _transactions.value
+                val budgets = _budgets.value
+                val reminders = _paymentReminders.value
+
+                val root = org.json.JSONObject()
+                root.put("app", "BudgetMate")
+                root.put("version", 1)
+                root.put("userId", user.id)
+                root.put("timestamp", System.currentTimeMillis())
+
+                val txArray = org.json.JSONArray()
+                for (tx in transactions) {
+                    val obj = org.json.JSONObject()
+                    obj.put("type", tx.type)
+                    obj.put("amount", tx.amount)
+                    obj.put("category", tx.category)
+                    obj.put("paymentMethod", tx.paymentMethod)
+                    obj.put("sourceOrMerchant", tx.sourceOrMerchant)
+                    obj.put("date", tx.date)
+                    obj.put("notes", tx.notes)
+                    txArray.put(obj)
+                }
+                root.put("transactions", txArray)
+
+                val budgetArray = org.json.JSONArray()
+                for (b in budgets) {
+                    val obj = org.json.JSONObject()
+                    obj.put("category", b.category)
+                    obj.put("monthlyLimit", b.monthlyLimit)
+                    obj.put("monthYear", b.monthYear)
+                    budgetArray.put(obj)
+                }
+                root.put("budgets", budgetArray)
+
+                val remArray = org.json.JSONArray()
+                for (r in reminders) {
+                    val obj = org.json.JSONObject()
+                    obj.put("title", r.title)
+                    obj.put("amount", r.amount)
+                    obj.put("dueDate", r.dueDate)
+                    obj.put("personOrEntity", r.personOrEntity)
+                    obj.put("reminderType", r.reminderType)
+                    obj.put("status", r.status)
+                    obj.put("isAlarmEnabled", r.isAlarmEnabled)
+                    remArray.put(obj)
+                }
+                root.put("paymentReminders", remArray)
+
+                callback(root.toString(2))
+            } catch (_: Exception) {
+                callback("")
+            }
+        }
+    }
+
+    fun restoreFullBackupJson(jsonString: String, onComplete: (Boolean, String) -> Unit) {
+        val user = _currentUser.value ?: defaultUser
+        viewModelScope.launch {
+            try {
+                val root = org.json.JSONObject(jsonString)
+                if (!root.has("app") || root.getString("app") != "BudgetMate") {
+                    onComplete(false, "Invalid backup file. Not recognized as a BudgetMate backup.")
+                    return@launch
+                }
+
+                var restoredTx = 0
+                if (root.has("transactions")) {
+                    val txArray = root.getJSONArray("transactions")
+                    for (i in 0 until txArray.length()) {
+                        val obj = txArray.getJSONObject(i)
+                        repository.insertTransaction(
+                            TransactionEntity(
+                                userId = user.id,
+                                type = obj.getString("type"),
+                                amount = obj.getDouble("amount"),
+                                category = obj.getString("category"),
+                                paymentMethod = obj.optString("paymentMethod", "UPI"),
+                                sourceOrMerchant = obj.optString("sourceOrMerchant", "Manual Entry"),
+                                date = obj.getLong("date"),
+                                notes = obj.optString("notes", "")
+                            )
+                        )
+                        restoredTx++
+                    }
+                }
+
+                var restoredBudgets = 0
+                if (root.has("budgets")) {
+                    val bArray = root.getJSONArray("budgets")
+                    for (i in 0 until bArray.length()) {
+                        val obj = bArray.getJSONObject(i)
+                        repository.saveBudget(
+                            BudgetEntity(
+                                userId = user.id,
+                                category = obj.getString("category"),
+                                monthlyLimit = obj.getDouble("monthlyLimit"),
+                                monthYear = obj.optString("monthYear", "2026-10")
+                            )
+                        )
+                        restoredBudgets++
+                    }
+                }
+
+                loadUserData(user.id)
+                onComplete(true, "Restored $restoredTx transactions and $restoredBudgets budgets successfully!")
+            } catch (e: Exception) {
+                onComplete(false, "Restore failed: ${e.localizedMessage ?: "Invalid JSON format"}")
+            }
+        }
     }
 }

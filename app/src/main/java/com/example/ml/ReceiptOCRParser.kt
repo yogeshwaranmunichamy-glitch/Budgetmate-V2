@@ -5,17 +5,90 @@ import java.util.Calendar
 import java.util.Locale
 import java.util.regex.Pattern
 
+data class ReceiptLineItem(
+    val name: String,
+    val price: Double,
+    val quantity: Int = 1,
+    val category: String = "Groceries"
+)
+
 data class ParsedReceiptData(
     val merchant: String,
     val amount: Double,
     val date: Long,
     val category: String,
     val items: List<String>,
+    val parsedItems: List<ReceiptLineItem> = emptyList(),
     val rawText: String,
     val confidence: Float
 )
 
 object ReceiptOCRParser {
+
+    /**
+     * Extracts structured line items (name, price, quantity, category) from receipt text lines.
+     */
+    fun extractStructuredItems(lines: List<String>): List<ReceiptLineItem> {
+        val structured = mutableListOf<ReceiptLineItem>()
+        val skipKeywords = listOf(
+            "total", "subtotal", "sub total", "grand total", "net amount", "tax", "gst", "cgst", "sgst",
+            "igst", "vat", "round off", "cash", "change", "bal due", "balance", "discount", "invoice",
+            "bill", "date", "time", "welcome", "thank", "card", "upi", "phone", "tel"
+        )
+
+        // Pattern 1: e.g. "1x Special Meals 180.00" or "2 x Masala Dosa 140.00"
+        val qtyFirstPattern = Pattern.compile("^(?:\\d+[\\.\\)]\\s*)?(\\d+)\\s*[xX*@]\\s*(.+?)\\s+(?:₹|rs\\.?)?\\s*(\\d+(?:\\.\\d{1,2})?)$", Pattern.CASE_INSENSITIVE)
+
+        // Pattern 2: e.g. "Bread 1 x 40.00"
+        val qtyMidPattern = Pattern.compile("^(?:\\d+[\\.\\)]\\s*)?(.+?)\\s+(\\d+)\\s*[xX*@]\\s*(?:₹|rs\\.?)?\\s*(\\d+(?:\\.\\d{1,2})?)$", Pattern.CASE_INSENSITIVE)
+
+        // Pattern 3: standard item + price e.g. "Atta 5kg ₹280.00" or "Filter Coffee 40.00"
+        val standardItemPattern = Pattern.compile("^(?:\\d+[\\.\\)]\\s*)?(.+?)\\s+(?:₹|rs\\.?)?\\s*(\\d+(?:\\.\\d{1,2})?)$", Pattern.CASE_INSENSITIVE)
+
+        for (line in lines) {
+            val trimmed = line.trim()
+            val lower = trimmed.lowercase(Locale.ROOT)
+            if (skipKeywords.any { lower.contains(it) } || trimmed.length < 3) continue
+
+            val mQty1 = qtyFirstPattern.matcher(trimmed)
+            if (mQty1.find()) {
+                val qty = mQty1.group(1)?.toIntOrNull() ?: 1
+                val name = mQty1.group(2)?.trim() ?: ""
+                val price = mQty1.group(3)?.toDoubleOrNull() ?: 0.0
+                if (name.length >= 2 && price > 0) {
+                    val itemCat = MultilingualNLP.parseInput(name).category
+                    val finalCat = if (itemCat != MultilingualNLP.CAT_SALARY) itemCat else "Food"
+                    structured.add(ReceiptLineItem(name = name, price = price, quantity = qty, category = finalCat))
+                    continue
+                }
+            }
+
+            val mQty2 = qtyMidPattern.matcher(trimmed)
+            if (mQty2.find()) {
+                val name = mQty2.group(1)?.trim() ?: ""
+                val qty = mQty2.group(2)?.toIntOrNull() ?: 1
+                val price = mQty2.group(3)?.toDoubleOrNull() ?: 0.0
+                if (name.length >= 2 && price > 0) {
+                    val itemCat = MultilingualNLP.parseInput(name).category
+                    val finalCat = if (itemCat != MultilingualNLP.CAT_SALARY) itemCat else "Food"
+                    structured.add(ReceiptLineItem(name = name, price = price, quantity = qty, category = finalCat))
+                    continue
+                }
+            }
+
+            val mStd = standardItemPattern.matcher(trimmed)
+            if (mStd.find()) {
+                val name = mStd.group(1)?.trim() ?: ""
+                val price = mStd.group(2)?.toDoubleOrNull() ?: 0.0
+                if (name.length >= 2 && price > 0 && !name.matches("^[\\d\\W]+$".toRegex())) {
+                    val itemCat = MultilingualNLP.parseInput(name).category
+                    val finalCat = if (itemCat != MultilingualNLP.CAT_SALARY) itemCat else "Food"
+                    structured.add(ReceiptLineItem(name = name, price = price, quantity = 1, category = finalCat))
+                }
+            }
+        }
+        return structured
+    }
 
     /**
      * Parses raw OCR text lines from a physical receipt using pattern matching,
@@ -101,10 +174,16 @@ object ReceiptOCRParser {
             }
         }
 
-        // 4. Extract possible items
-        for (line in lines) {
-            if (line.matches(".*\\d+\\.\\d{2}$".toRegex()) && !line.lowercase().contains("total")) {
-                detectedItems.add(line)
+        // 4. Extract structured items (multiple items breakdown)
+        val structuredItems = extractStructuredItems(lines)
+        for (item in structuredItems) {
+            detectedItems.add("${item.name} - ₹${item.price}")
+        }
+        if (detectedItems.isEmpty()) {
+            for (line in lines) {
+                if (line.matches(".*\\d+\\.\\d{2}$".toRegex()) && !line.lowercase().contains("total")) {
+                    detectedItems.add(line)
+                }
             }
         }
 
@@ -121,6 +200,7 @@ object ReceiptOCRParser {
             date = receiptDate,
             category = category,
             items = detectedItems,
+            parsedItems = structuredItems,
             rawText = rawText,
             confidence = confidence
         )

@@ -97,4 +97,62 @@ class PaddleOCRTest {
         assertNotNull(parsed)
         assertEquals(0.0, parsed.amount, 0.01)
     }
+
+    @Test
+    fun testExtractStructuredMultipleItemsFromBill() {
+        val lines = listOf(
+            PaddleOCRLine("RELIANCE FRESH RETAIL", 0.98f),
+            PaddleOCRLine("Date: 01/10/2026", 0.95f),
+            PaddleOCRLine("Atta 5kg ₹280.00", 0.96f),
+            PaddleOCRLine("Sunflower Oil 2L ₹340.00", 0.97f),
+            PaddleOCRLine("Basmati Rice 1kg 120.00", 0.95f),
+            PaddleOCRLine("Total Amount: 740.00", 0.99f),
+            PaddleOCRLine("Payment: UPI", 0.98f)
+        )
+        val ocrResult = PaddleOCRResult(
+            lines = lines,
+            fullText = lines.joinToString("\n") { it.text },
+            engineName = "PaddleOCR",
+            durationMs = 80
+        )
+
+        val parsed = PaddleOCREngine.parsePaddleOCRReceipt(ocrResult)
+        assertEquals(3, parsed.parsedItems.size)
+
+        val item1 = parsed.parsedItems[0]
+        assertEquals("Atta 5kg", item1.name)
+        assertEquals(280.0, item1.price, 0.01)
+
+        val item2 = parsed.parsedItems[1]
+        assertEquals("Sunflower Oil 2L", item2.name)
+        assertEquals(340.0, item2.price, 0.01)
+
+        val item3 = parsed.parsedItems[2]
+        assertEquals("Basmati Rice 1kg", item3.name)
+        assertEquals(120.0, item3.price, 0.01)
+
+        val itemsSum = parsed.parsedItems.sumOf { it.price }
+        assertEquals(740.0, itemsSum, 0.01)
+    }
+
+    @Test
+    fun testExtractMultipleItemsWithQuantities() {
+        val rawReceipt = """
+            HOTEL SARAVANA
+            Date: 02/10/2026
+            2x Masala Dosa 140.00
+            1x Filter Coffee 40.00
+            Total: 180.00
+        """.trimIndent()
+
+        val parsed = com.example.ml.ReceiptOCRParser.parseReceiptText(rawReceipt)
+        assertEquals(2, parsed.parsedItems.size)
+        assertEquals("Masala Dosa", parsed.parsedItems[0].name)
+        assertEquals(2, parsed.parsedItems[0].quantity)
+        assertEquals(140.0, parsed.parsedItems[0].price, 0.01)
+
+        assertEquals("Filter Coffee", parsed.parsedItems[1].name)
+        assertEquals(1, parsed.parsedItems[1].quantity)
+        assertEquals(40.0, parsed.parsedItems[1].price, 0.01)
+    }
 }

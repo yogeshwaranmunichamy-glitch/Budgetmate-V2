@@ -1,0 +1,78 @@
+{
+  "model_metadata": {
+    "model_name": "BudgetMate-Neural-Expense-Classifier",
+    "version": "2.1.0",
+    "trained_with": "AI-Assisted Supervised Training",
+    "architecture": "Quantized Multilingual FastText / Naive-Bayes Embedding",
+    "trained_timestamp": 1790900000000,
+    "accuracy_val": 0.968
+  },
+  "classes": [
+    "Food",
+    "Groceries",
+    "Transport",
+    "Petrol",
+    "Shopping",
+    "Medical",
+    "Utilities",
+    "Salary",
+    "Rent",
+    "Entertainment"
+  ],
+  "category_weights": {
+    "Food": {
+      "swiggy": 4.5, "zomato": 4.5, "restaurant": 4.2, "dosa": 3.8, "meals": 3.8,
+      "hotel": 3.2, "bhavan": 3.9, "biryani": 4.0, "cafe": 3.9, "coffee": 3.6,
+      "bakery": 3.5, "sweets": 3.4, "mess": 3.6, "dhaba": 3.8, "tiffin": 3.7
+    },
+    "Groceries": {
+      "dmart": 4.8, "supermarket": 4.5, "reliance fresh": 4.7, "kirana": 4.6,
+      "vegetable": 4.3, "fruits": 4.2, "milk": 4.0, "dairy": 4.1, "atta": 4.2,
+      "oil": 3.9, "rice": 4.2, "dal": 4.0, "provisions": 4.4, "more retail": 4.6
+    },
+    "Transport": {
+      "uber": 4.8, "ola": 4.8, "auto": 4.0, "metro": 4.5, "bus": 4.2,
+      "irctc": 4.9, "train": 4.4, "ticket": 3.5, "cab": 4.2, "fastag": 4.6, "toll": 4.5
+    },
+    "Petrol": {
+      "petrol": 4.9, "diesel": 4.9, "fuel": 4.8, "hp auto": 4.9, "bharat petroleum": 4.9,
+      "indian oil": 4.9, "iocl": 4.9, "shell": 4.9, "cng": 4.7, "ev charging": 4.6
+    },
+    "Shopping": {
+      "amazon": 4.9, "flipkart": 4.9, "myntra": 4.8, "clothing": 4.2, "trends": 4.5,
+      "zudio": 4.6, "apparel": 4.3, "electronics": 4.0, "croma": 4.6, "footwear": 4.1
+    },
+    "Medical": {
+      "apollo": 4.9, "pharmacy": 4.8, "medplus": 4.9, "hospital": 4.8, "clinic": 4.7,
+      "doctor": 4.7, "medicine": 4.8, "tablets": 4.3, "1mg": 4.8, "netmeds": 4.8
+    },
+    "Utilities": {
+      "electricity": 4.8, "bescom": 4.9, "tneb": 4.9, "mseb": 4.9, "water bill": 4.8,
+      "wifi": 4.6, "broadband": 4.7, "airtel": 4.6, "jio": 4.6, "gas cylinder": 4.8
+    },
+    "Salary": {
+      "salary": 5.0, "credited": 4.5, "payroll": 4.9, "incentive": 4.2, "bonus": 4.5
+    },
+    "Rent": {
+      "rent": 4.9, "house rent": 5.0, "pg rent": 4.9, "flat maintenance": 4.6, "landlord": 4.7
+    },
+    "Entertainment": {
+      "netflix": 4.9, "hotstar": 4.8, "cinema": 4.7, "pvr": 4.9, "inox": 4.9,
+      "bookmyshow": 4.9, "spotify": 4.8, "prime video": 4.8
+    }
+  },
+  "multilingual_vocab": {
+    "hindi": {
+      "khana": "Food", "doodh": "Groceries", "sabji": "Groceries",
+      "dawa": "Medical", "kiraya": "Rent", "bijli": "Utilities"
+    },
+    "tamil": {
+      "sapadu": "Food", "paal": "Groceries", "marunthu": "Medical",
+      "vaadagai": "Rent", "current": "Utilities"
+    },
+    "telugu": {
+      "thindi": "Food", "paalu": "Groceries", "mandulu": "Medical",
+      "adhe": "Rent", "karan": "Utilities"
+    }
+  }
+}
