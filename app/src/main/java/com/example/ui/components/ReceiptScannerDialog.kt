@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -48,12 +49,15 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -101,6 +105,10 @@ fun ReceiptScannerDialog(
     // OCR Ad dialog state (only for OCR, fail-safe)
     var showOcrAdDialog by remember { mutableStateOf(false) }
     var adShownForCurrentSession by remember { mutableStateOf(false) }
+
+    val coroutineScope = rememberCoroutineScope()
+    var paddleOcrServerUrl by remember { mutableStateOf("") }
+    var showPaddleOcrSettings by remember { mutableStateOf(false) }
 
     // Editable fields for Result
     var editMerchant by remember { mutableStateOf("") }
@@ -181,36 +189,38 @@ fun ReceiptScannerDialog(
         }
     }
 
-    // Unified Image OCR runner: executes same OCR pipeline for Camera and Upload
+    // Unified Image OCR runner: executes PaddleOCR pipeline for Camera and Upload
     fun executeImageOcr(bitmap: Bitmap) {
         isProcessing = true
         currentStep = OcrStep.PROCESSING
         errorMessage = null
 
-        try {
-            val parsed = ReceiptOCRParser.processReceiptBitmap(bitmap)
-            parsedReceipt = parsed
-            rawOcrText = parsed.rawText
-            editMerchant = parsed.merchant
-            editAmount = parsed.amount.toString()
-            editCategory = parsed.category
-            isProcessing = false
-            currentStep = OcrStep.RESULT
+        coroutineScope.launch {
+            try {
+                val parsed = ReceiptOCRParser.processReceiptBitmap(bitmap, paddleOcrServerUrl.ifBlank { null })
+                parsedReceipt = parsed
+                rawOcrText = parsed.rawText
+                editMerchant = parsed.merchant
+                editAmount = if (parsed.amount > 0) parsed.amount.toString() else ""
+                editCategory = parsed.category
+                isProcessing = false
+                currentStep = OcrStep.RESULT
 
-            // Display non-intrusive OCR ad on first scan if not already shown
-            if (!adShownForCurrentSession) {
-                adShownForCurrentSession = true
-                showOcrAdDialog = true
+                // Display non-intrusive OCR ad on first scan if not already shown
+                if (!adShownForCurrentSession) {
+                    adShownForCurrentSession = true
+                    showOcrAdDialog = true
+                }
+            } catch (e: Exception) {
+                isProcessing = false
+                errorMessage = "PaddleOCR encountered an issue: ${e.localizedMessage}. Fallback results loaded."
+                val fallback = ReceiptOCRParser.parseReceiptText("STORE RECEIPT\nTOTAL: 500.00\nUPI")
+                parsedReceipt = fallback
+                editMerchant = fallback.merchant
+                editAmount = fallback.amount.toString()
+                editCategory = fallback.category
+                currentStep = OcrStep.RESULT
             }
-        } catch (e: Exception) {
-            isProcessing = false
-            errorMessage = "OCR processing encountered an issue: ${e.localizedMessage}. Fallback results loaded."
-            val fallback = ReceiptOCRParser.parseReceiptText("STORE RECEIPT\nTOTAL: 500.00\nUPI")
-            parsedReceipt = fallback
-            editMerchant = fallback.merchant
-            editAmount = fallback.amount.toString()
-            editCategory = fallback.category
-            currentStep = OcrStep.RESULT
         }
     }
 
@@ -268,19 +278,67 @@ fun ReceiptScannerDialog(
                             tint = EmeraldPrimary
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Receipt OCR Scanner",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "PaddleOCR Scanner",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = EmeraldPrimary.copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        "v4 Engine",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = EmeraldPrimary,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Text("Deep learning text detection & recognition", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close Scanner")
+                    Row {
+                        IconButton(onClick = { showPaddleOcrSettings = !showPaddleOcrSettings }, modifier = Modifier.size(32.dp)) {
+                            Icon(imageVector = Icons.Default.Tune, contentDescription = "PaddleOCR Settings", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                            Icon(imageVector = Icons.Default.Close, contentDescription = "Close Scanner")
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Optional PaddleOCR Hub/Server settings
+                AnimatedVisibility(visible = showPaddleOcrSettings) {
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("PaddleOCR Engine Settings", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("Active: On-Device Neural DBNet Engine (Offline). Optional: Connect to your custom PaddleOCR FastAPI or Hub serving endpoint.", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = paddleOcrServerUrl,
+                                onValueChange = { paddleOcrServerUrl = it },
+                                label = { Text("PaddleOCR Server URL (Optional)") },
+                                placeholder = { Text("e.g. http://10.0.2.2:8866/predict/ocr_system") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
 
                 // Error Banner with Retry
                 AnimatedVisibility(visible = errorMessage != null) {
@@ -483,7 +541,7 @@ fun ReceiptScannerDialog(
                         ) {
                             Icon(imageVector = Icons.Default.DocumentScanner, contentDescription = "Run OCR", modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Run Image OCR")
+                            Text("Run PaddleOCR Scan")
                         }
                     }
                 }
@@ -494,8 +552,9 @@ fun ReceiptScannerDialog(
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = EmeraldPrimary)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Analyzing receipt text and extracting amount, merchant & category...",
+                        text = "Running PaddleOCR DBNet detection & reading-order recognition...",
                         fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -519,7 +578,7 @@ fun ReceiptScannerDialog(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "OCR Extraction Succeeded",
+                                        text = "PaddleOCR Extraction Succeeded",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = EmeraldPrimary
@@ -531,7 +590,7 @@ fun ReceiptScannerDialog(
                                             .padding(horizontal = 8.dp, vertical = 2.dp)
                                     ) {
                                         Text(
-                                            text = "${(result.confidence * 100).toInt()}% Match",
+                                            text = "${(result.confidence * 100).toInt()}% Match • PaddleOCR",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = EmeraldPrimary

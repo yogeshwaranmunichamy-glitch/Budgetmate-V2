@@ -41,8 +41,9 @@ object ReceiptOCRParser {
 
         // 2. Total Amount Extraction: look for keywords like "total", "net amount", "grand total", "subtotal", "amount", "rs", "₹"
         val totalPatterns = listOf(
-            Pattern.compile("(?:total|grand\\s*total|net\\s*amount|final\\s*amount|bal\\s*due|amount\\s*paid|rs\\.?|₹)\\s*[:=-]?\\s*(?:₹|rs\\.?)?\\s*(\\d+(?:,\\d+)*(?:\\.\\d{1,2})?)", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("(\\d+(?:,\\d+)*(?:\\.\\d{1,2})?)\\s*(?:total|paid)", Pattern.CASE_INSENSITIVE)
+            Pattern.compile("(?:total(?:\\s*(?:amount|amt|bill|value|payable))?|grand\\s*total|net\\s*amount|final\\s*amount|bal\\s*due|amount\\s*paid|net\\s*payable|bill\\s*amount)\\s*[:=-]?\\s*(?:₹|rs\\.?)?\\s*(\\d+(?:,\\d+)*(?:\\.\\d{1,2})?)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("(\\d+(?:,\\d+)*(?:\\.\\d{1,2})?)\\s*(?:total|paid|grand\\s*total)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("(?:subtotal|sub\\s*total)\\s*[:=-]?\\s*(?:₹|rs\\.?)?\\s*(\\d+(?:,\\d+)*(?:\\.\\d{1,2})?)", Pattern.CASE_INSENSITIVE)
         )
 
         // Reverse search lines for TOTAL (usually near the bottom)
@@ -126,51 +127,40 @@ object ReceiptOCRParser {
     }
 
     /**
-     * Process image bitmap from Camera or File Upload through the unified Image OCR pipeline.
-     * Safely inspects image, handles memory, and performs structured financial receipt parsing.
+     * Process image bitmap from Camera or File Upload through the PaddleOCR pipeline.
+     * Uses on-device neural DBNet recognition + optional PaddleOCR Hub/server,
+     * applying PaddleOCR reading-order sorting and receipt financial entity parsing.
      */
-    fun processReceiptBitmap(bitmap: android.graphics.Bitmap): ParsedReceiptData {
+    suspend fun processReceiptBitmap(
+        bitmap: android.graphics.Bitmap,
+        customServerUrl: String? = null
+    ): ParsedReceiptData {
         return try {
-            val width = bitmap.width
-            val height = bitmap.height
-
-            // Analyze image aspect ratio and brightness to determine document type
-            val isTallReceipt = height > width * 1.2
-            val sampleText = if (isTallReceipt) {
-                """
-                RETAIL STORE RECEIPT
-                INV: #REC-${(1000..9999).random()}
-                DATE: ${SimpleDateFormat("dd/MM/yyyy", Locale.US).format(System.currentTimeMillis())}
-                1x Groceries & Provisions ₹480.00
-                2x Dairy & Bakery Items ₹240.00
-                Subtotal: ₹720.00
-                Tax GST 5%: ₹36.00
-                TOTAL AMOUNT: ₹756.00
-                PAYMENT: CASH / UPI
-                """.trimIndent()
+            val ocrResult = PaddleOCREngine.recognize(bitmap, customServerUrl)
+            if (ocrResult.lines.isNotEmpty() && ocrResult.fullText.isNotBlank()) {
+                PaddleOCREngine.parsePaddleOCRReceipt(ocrResult)
             } else {
-                """
-                SUPERMARKET / MART
-                BILL NO: ${(10000..99999).random()}
-                DATE: ${SimpleDateFormat("dd/MM/yyyy", Locale.US).format(System.currentTimeMillis())}
-                Items Purchased: Groceries & Household
-                Total Items: 3
-                TOTAL AMOUNT: ₹1250.00
-                PAID VIA: UPI
-                """.trimIndent()
+                // If camera photo was empty/dark, provide clean placeholder
+                ParsedReceiptData(
+                    merchant = "Store / Merchant",
+                    amount = 0.0,
+                    date = System.currentTimeMillis(),
+                    category = "Groceries",
+                    items = emptyList(),
+                    rawText = "No clear text detected in image. Please ensure good lighting and text focus.",
+                    confidence = 0.30f
+                )
             }
-
-            parseReceiptText(sampleText)
         } catch (e: Exception) {
-            // Safe fallback to prevent crashes
+            // Graceful error fallback
             ParsedReceiptData(
-                merchant = "Scanned Merchant",
-                amount = 500.0,
+                merchant = "Scanned Receipt",
+                amount = 0.0,
                 date = System.currentTimeMillis(),
                 category = "Groceries",
-                items = listOf("Receipt Purchase ₹500.00"),
-                rawText = "Receipt image parsed successfully",
-                confidence = 0.80f
+                items = emptyList(),
+                rawText = "PaddleOCR processing error: ${e.localizedMessage ?: "Unknown error"}",
+                confidence = 0.30f
             )
         }
     }
